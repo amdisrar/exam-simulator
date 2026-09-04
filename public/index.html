@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Exam Simulator</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <h1>Exam Simulator</h1>
+        <p>Create persistent exams and run randomized practice sessions.</p>
+      </div>
+      <button id="homeBtn" class="secondary hidden">All Exams</button>
+    </header>
+
+    <section id="examListView">
+      <div class="section-head">
+        <div>
+          <h2>Available Exams</h2>
+          <p>Select an exam to configure a session.</p>
+        </div>
+        <button id="newExamBtn">+ New Exam</button>
+      </div>
+      <div id="examList" class="exam-grid"></div>
+    </section>
+
+    <section id="configureView" class="hidden">
+      <div class="card">
+        <h2 id="configureTitle"></h2>
+        <p id="configureDescription" class="muted"></p>
+
+        <div class="config-grid">
+          <label>
+            Random questions
+            <select id="questionCount"></select>
+          </label>
+
+          <label>
+            Shuffle questions
+            <select id="shuffleQuestions">
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
+
+          <label>
+            Shuffle answers
+            <select id="shuffleAnswers">
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="startExamBtn">Start Exam</button>
+          <button id="editExamBtn" class="secondary">Edit Questions</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="examView" class="hidden">
+      <div class="progress-row">
+        <span id="progressText"></span>
+        <span id="questionType" class="pill"></span>
+      </div>
+
+      <div class="card">
+        <h2 id="questionText"></h2>
+        <img id="questionImage" class="question-image hidden" alt="Question image">
+        <div id="options" class="options"></div>
+
+        <div id="answerBox" class="answer-box hidden">
+          <strong>Correct answer</strong>
+          <div id="answerText"></div>
+          <p id="explanationText"></p>
+        </div>
+      </div>
+
+      <div class="nav-row">
+        <div>
+          <button id="prevBtn" class="secondary">Previous</button>
+          <button id="nextBtn" class="secondary">Next</button>
+        </div>
+        <div>
+          <button id="showAnswerBtn" class="secondary">Show Answer</button>
+          <button id="finishBtn">Finish Exam</button>
+        </div>
+      </div>
+
+      <div id="resultBox" class="card hidden"></div>
+    </section>
+
+    <section id="editView" class="hidden">
+      <div class="section-head">
+        <div>
+          <h2 id="editTitle">Edit Exam</h2>
+          <p class="muted">Add questions to this exam.</p>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <form id="questionForm" class="card">
+          <h3>Add Question</h3>
+
+          <label>
+            Question text
+            <textarea id="newQuestion" rows="4" required></textarea>
+          </label>
+
+          <label>
+            Question type
+            <select id="answerType">
+              <option value="single">Single answer</option>
+              <option value="multiple">Multiple answers</option>
+            </select>
+          </label>
+
+          <div>
+            <div class="label-title">Answer options</div>
+            <p class="muted small">Tick each correct answer.</p>
+            <div id="optionEditors"></div>
+            <button type="button" id="addOptionBtn" class="secondary">+ Add Option</button>
+          </div>
+
+          <label>
+            Image
+            <input id="imageFile" type="file" accept="image/*">
+          </label>
+          <img id="imagePreview" class="preview hidden" alt="Preview">
+
+          <label>
+            Explanation
+            <textarea id="explanation" rows="3"></textarea>
+          </label>
+
+          <div id="formMessage" class="muted"></div>
+          <button type="submit">Save Question</button>
+        </form>
+
+        <div class="card">
+          <h3>Question Bank</h3>
+          <div id="questionBank"></div>
+        </div>
+      </div>
+    </section>
+
+    <dialog id="newExamDialog">
+      <form id="newExamForm">
+        <h2>Create Exam</h2>
+        <label>
+          Title
+          <input id="examTitle" required>
+        </label>
+        <label>
+          Description
+          <textarea id="examDescription" rows="3"></textarea>
+        </label>
+        <div class="actions">
+          <button type="submit">Create</button>
+          <button type="button" id="cancelDialogBtn" class="secondary">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

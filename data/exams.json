@@ -1,0 +1,41 @@
+[
+  {
+    "id": "network-basics",
+    "title": "Network Basics",
+    "description": "Sample exam covering basic networking concepts.",
+    "questions": [
+      {
+        "id": "q1",
+        "text": "Which protocol is primarily used to securely browse websites?",
+        "type": "single",
+        "options": ["HTTP", "HTTPS", "FTP", "Telnet"],
+        "correct": [1],
+        "explanation": "HTTPS protects web traffic using TLS.",
+        "image": ""
+      },
+      {
+        "id": "q2",
+        "text": "Which of the following are private IPv4 address ranges?",
+        "type": "multiple",
+        "options": [
+          "10.0.0.0/8",
+          "172.16.0.0/12",
+          "192.168.0.0/16",
+          "8.8.8.0/24"
+        ],
+        "correct": [0, 1, 2],
+        "explanation": "RFC 1918 defines the private IPv4 address ranges.",
+        "image": ""
+      },
+      {
+        "id": "q3",
+        "text": "Which device normally forwards packets between different IP networks?",
+        "type": "single",
+        "options": ["Router", "Keyboard", "Printer", "Monitor"],
+        "correct": [0],
+        "explanation": "Routers forward traffic between IP networks.",
+        "image": ""
+      }
+    ]
+  }
+]

@@ -11,7 +11,7 @@
     <header class="topbar">
       <div>
         <h1>Exam Simulator</h1>
-        <p>Create persistent exams and run randomized practice sessions.</p>
+        <p>Practice by range or run timed randomized exams.</p>
       </div>
       <button id="homeBtn" class="secondary hidden">All Exams</button>
     </header>
@@ -20,7 +20,7 @@
       <div class="section-head">
         <div>
           <h2>Available Exams</h2>
-          <p>Select an exam to configure a session.</p>
+          <p>Select an exam to choose Practice or Exam mode.</p>
         </div>
         <button id="newExamBtn">+ New Exam</button>
       </div>
@@ -32,39 +32,110 @@
         <h2 id="configureTitle"></h2>
         <p id="configureDescription" class="muted"></p>
 
-        <div class="config-grid">
-          <label>
-            Random questions
-            <select id="questionCount"></select>
-          </label>
-          <label>
-            Shuffle questions
-            <select id="shuffleQuestions">
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </label>
-          <label>
-            Shuffle answers
-            <select id="shuffleAnswers">
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </label>
+        <div class="mode-picker">
+          <button id="practiceModeBtn" type="button" class="mode-card active">
+            <strong>Practice Mode</strong>
+            <span>No timer, choose question range, show answers anytime.</span>
+          </button>
+          <button id="examModeBtn" type="button" class="mode-card">
+            <strong>Exam Mode</strong>
+            <span>Random questions, timer, pass/fail, answers hidden until submission.</span>
+          </button>
         </div>
 
+        <div id="practiceConfig" class="mode-config">
+          <h3>Practice Settings</h3>
+          <div class="config-grid practice-grid">
+            <label>
+              Question selection
+              <select id="practiceRangePreset">
+                <option value="all">All Questions</option>
+                <option value="1-10">1–10</option>
+                <option value="11-20">11–20</option>
+                <option value="21-30">21–30</option>
+                <option value="31-40">31–40</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </label>
+            <label>
+              Shuffle questions
+              <select id="practiceShuffleQuestions">
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+            <label>
+              Shuffle answers
+              <select id="practiceShuffleAnswers">
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="customRangeFields" class="range-fields hidden">
+            <label>From question <input id="practiceRangeStart" type="number" min="1" value="1"></label>
+            <label>To question <input id="practiceRangeEnd" type="number" min="1" value="10"></label>
+          </div>
+
+          <p id="practiceRangeSummary" class="muted small"></p>
+        </div>
+
+        <div id="examConfig" class="mode-config hidden">
+          <h3>Exam Settings</h3>
+          <div class="config-grid exam-config-grid">
+            <label>
+              Number of questions
+              <input id="examQuestionCount" type="number" min="1" value="20">
+            </label>
+            <label>
+              Exam duration (minutes)
+              <input id="examDuration" type="number" min="1" value="30">
+            </label>
+            <label>
+              Allow back navigation
+              <select id="examAllowBack">
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+            <label>
+              Passing percentage
+              <div class="suffix-input"><input id="examPassingPercentage" type="number" min="1" max="100" value="70"><span>%</span></div>
+            </label>
+            <label>
+              Unanswered warning
+              <select id="examUnansweredWarning">
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+          </div>
+          <p class="muted small">Questions are selected randomly and answer choices are always shuffled in Exam Mode.</p>
+        </div>
+
+        <div id="configMessage" class="form-error"></div>
         <div class="actions">
-          <button id="startExamBtn">Start Exam</button>
+          <button id="startExamBtn">Start Practice</button>
           <button id="editExamBtn" class="secondary">Edit Questions</button>
         </div>
       </div>
     </section>
 
     <section id="examView" class="hidden">
-      <div class="progress-row">
-        <span id="progressText"></span>
-        <span id="questionType" class="pill"></span>
+      <div class="session-top-row">
+        <div class="progress-row">
+          <span id="progressText"></span>
+          <span id="questionType" class="pill"></span>
+          <span id="sessionModeBadge" class="pill mode-badge"></span>
+        </div>
+        <div id="timerBox" class="timer-box hidden">
+          <span class="timer-label">Time Remaining</span>
+          <strong id="timerText">00:00</strong>
+        </div>
       </div>
+
+      <div id="noBackWarning" class="no-back-warning hidden">Back navigation is disabled. Once you move to the next question, you cannot return.</div>
 
       <div class="card">
         <h2 id="questionText"></h2>
@@ -98,7 +169,7 @@
         </div>
         <div>
           <button id="showAnswerBtn" class="secondary">Show Answers</button>
-          <button id="finishBtn">Finish Exam</button>
+          <button id="finishBtn">Finish Practice</button>
         </div>
       </div>
 
@@ -117,13 +188,8 @@
         <form id="questionForm" class="card">
           <h3>Add Question</h3>
 
-          <label>
-            Question text
-            <textarea id="newQuestion" rows="4" required></textarea>
-          </label>
-
-          <label>
-            Question type
+          <label>Question text<textarea id="newQuestion" rows="4" required></textarea></label>
+          <label>Question type
             <select id="answerType">
               <option value="single">Single answer</option>
               <option value="multiple">Multiple answers</option>
@@ -150,17 +216,11 @@
             <button type="button" id="addDropTargetBtn" class="secondary">+ Add Drop Target</button>
           </div>
 
-          <label>
-            Images
-            <input id="imageFile" type="file" accept="image/*" multiple>
-          </label>
+          <label>Images<input id="imageFile" type="file" accept="image/*" multiple></label>
           <p class="muted small">You can select multiple images for one question.</p>
           <div id="imagePreviewList" class="image-preview-list"></div>
 
-          <label>
-            Explanation
-            <textarea id="explanation" rows="3"></textarea>
-          </label>
+          <label>Explanation<textarea id="explanation" rows="3"></textarea></label>
 
           <div id="formMessage" class="muted"></div>
           <button type="submit">Save Question</button>
@@ -176,14 +236,8 @@
     <dialog id="newExamDialog">
       <form id="newExamForm">
         <h2>Create Exam</h2>
-        <label>
-          Title
-          <input id="examTitle" required>
-        </label>
-        <label>
-          Description
-          <textarea id="examDescription" rows="3"></textarea>
-        </label>
+        <label>Title<input id="examTitle" required></label>
+        <label>Description<textarea id="examDescription" rows="3"></textarea></label>
         <div class="actions">
           <button type="submit">Create</button>
           <button type="button" id="cancelDialogBtn" class="secondary">Cancel</button>
@@ -200,9 +254,18 @@
           <button id="closeZoomBtn" type="button">Close</button>
         </div>
       </div>
-      <div class="zoom-scroll">
-        <img id="zoomedImage" alt="Question image at original size">
-      </div>
+      <div class="zoom-scroll"><img id="zoomedImage" alt="Question image at original size"></div>
+    </dialog>
+
+    <dialog id="submitExamDialog" class="submit-dialog">
+      <form method="dialog">
+        <h2>Submit Exam?</h2>
+        <p id="submitExamMessage"></p>
+        <div class="actions">
+          <button id="cancelSubmitBtn" type="button" class="secondary">Cancel</button>
+          <button id="confirmSubmitBtn" type="button">Submit Exam</button>
+        </div>
+      </form>
     </dialog>
   </main>
 

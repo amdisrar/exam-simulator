@@ -7,7 +7,8 @@ const state = {
   revealed: new Set(),
   finished: false,
   imageData: [],
-  currentImageIndex: 0
+  currentImageIndex: 0,
+  editingQuestionId: null
 };
 
 const $ = id => document.getElementById(id);
@@ -50,7 +51,7 @@ function getQuestionImages(question) {
     return question.images.filter(Boolean);
   }
 
-  // Backward compatibility with older questions that used a single `image` field.
+  // Backward compatibility with questions created before multi-image support.
   return question.image ? [question.image] : [];
 }
 
@@ -181,9 +182,7 @@ function changeQuestionImage(direction) {
   state.currentImageIndex = (state.currentImageIndex + direction + images.length) % images.length;
   renderImageGallery(q);
 
-  if ($("imageZoomDialog").open) {
-    renderZoomImage();
-  }
+  if ($("imageZoomDialog").open) renderZoomImage();
 }
 
 function renderZoomImage() {
@@ -375,13 +374,68 @@ function renderImagePreviews() {
   });
 }
 
+function ensureCancelEditButton() {
+  let button = $("cancelQuestionEditBtn");
+  if (button) return button;
+
+  button = document.createElement("button");
+  button.id = "cancelQuestionEditBtn";
+  button.type = "button";
+  button.className = "secondary hidden";
+  button.textContent = "Cancel Edit";
+  button.style.marginLeft = "8px";
+  button.addEventListener("click", () => resetQuestionForm());
+
+  const submitButton = $("questionForm").querySelector('button[type="submit"]');
+  submitButton.insertAdjacentElement("afterend", button);
+  return button;
+}
+
+function setQuestionFormMode(editing) {
+  const form = $("questionForm");
+  const heading = form.querySelector("h3");
+  const submitButton = form.querySelector('button[type="submit"]');
+  const cancelButton = ensureCancelEditButton();
+
+  heading.textContent = editing ? "Edit Question" : "Add Question";
+  submitButton.textContent = editing ? "Update Question" : "Save Question";
+  cancelButton.classList.toggle("hidden", !editing);
+}
+
 function resetQuestionForm() {
   $("questionForm").reset();
   $("optionEditors").innerHTML = "";
   for (let i = 0; i < 4; i++) addOptionEditor();
   state.imageData = [];
+  state.editingQuestionId = null;
   renderImagePreviews();
   $("formMessage").textContent = "";
+  setQuestionFormMode(false);
+}
+
+function beginEditQuestion(question) {
+  $("questionForm").reset();
+  $("optionEditors").innerHTML = "";
+
+  state.editingQuestionId = question.id;
+  state.imageData = [...getQuestionImages(question)];
+
+  $("newQuestion").value = question.text || "";
+  $("answerType").value = question.type === "multiple" ? "multiple" : "single";
+  $("explanation").value = question.explanation || "";
+
+  question.options.forEach((option, index) => {
+    addOptionEditor(option, question.correct.includes(index));
+  });
+
+  while ($("optionEditors").children.length < 2) addOptionEditor();
+
+  renderImagePreviews();
+  setQuestionFormMode(true);
+  $("formMessage").textContent = "Editing saved question. Existing images can be removed or new images added.";
+
+  $("questionForm").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("newQuestion").focus({ preventScroll: true });
 }
 
 function renderQuestionBank() {
@@ -408,12 +462,22 @@ function renderQuestionBank() {
             ${q.options.length} options${imageCount ? ` · ${imageCount} image${imageCount === 1 ? "" : "s"}` : ""}
           </div>
         </div>
-        <button type="button" class="secondary">Delete</button>
+        <div class="question-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="secondary edit-question-btn">Edit</button>
+          <button type="button" class="secondary delete-question-btn">Delete</button>
+        </div>
       </div>
     `;
 
-    item.querySelector("button").addEventListener("click", async () => {
+    item.querySelector(".edit-question-btn").addEventListener("click", () => {
+      beginEditQuestion(q);
+    });
+
+    item.querySelector(".delete-question-btn").addEventListener("click", async () => {
       await api(`/api/exams/${state.selectedExam.id}/questions/${q.id}`, { method: "DELETE" });
+
+      if (state.editingQuestionId === q.id) resetQuestionForm();
+
       state.selectedExam = await api(`/api/exams/${state.selectedExam.id}`);
       renderQuestionBank();
       fillQuestionCount();
@@ -491,9 +555,7 @@ $("zoomNextBtn").addEventListener("click", () => changeQuestionImage(1));
 $("closeZoomBtn").addEventListener("click", () => $("imageZoomDialog").close());
 
 $("imageZoomDialog").addEventListener("click", event => {
-  if (event.target === $("imageZoomDialog")) {
-    $("imageZoomDialog").close();
-  }
+  if (event.target === $("imageZoomDialog")) $("imageZoomDialog").close();
 });
 
 $("imageFile").addEventListener("change", async e => {
@@ -537,28 +599,38 @@ $("questionForm").addEventListener("submit", async e => {
     options.push(text);
   }
 
+  const payload = {
+    text: $("newQuestion").value,
+    type: $("answerType").value,
+    options,
+    correct,
+    explanation: $("explanation").value,
+    images: state.imageData
+  };
+
+  const editingQuestionId = state.editingQuestionId;
+  const endpoint = editingQuestionId
+    ? `/api/exams/${state.selectedExam.id}/questions/${editingQuestionId}`
+    : `/api/exams/${state.selectedExam.id}/questions`;
+
   try {
-    await api(`/api/exams/${state.selectedExam.id}/questions`, {
-      method: "POST",
-      body: JSON.stringify({
-        text: $("newQuestion").value,
-        type: $("answerType").value,
-        options,
-        correct,
-        explanation: $("explanation").value,
-        images: state.imageData
-      })
+    await api(endpoint, {
+      method: editingQuestionId ? "PUT" : "POST",
+      body: JSON.stringify(payload)
     });
 
     state.selectedExam = await api(`/api/exams/${state.selectedExam.id}`);
     resetQuestionForm();
-    $("formMessage").textContent = "Question saved.";
+    $("formMessage").textContent = editingQuestionId ? "Question updated." : "Question saved.";
     renderQuestionBank();
     fillQuestionCount();
   } catch (err) {
     $("formMessage").textContent = err.message;
   }
 });
+
+ensureCancelEditButton();
+setQuestionFormMode(false);
 
 loadExamList().catch(err => {
   $("examList").innerHTML = `<div class="card"><p>${escapeHtml(err.message)}</p></div>`;

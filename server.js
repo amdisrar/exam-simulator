@@ -11,7 +11,6 @@ const DATA_FILE = path.join(__dirname, "data", "exams.json");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Multiple base64 images can make a question payload larger than before.
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -32,13 +31,7 @@ async function writeExams(exams) {
 
 function parseQuestionPayload(body) {
   const text = String(body.text || "").trim();
-  const type = body.type === "multiple" ? "multiple" : "single";
-  const options = Array.isArray(body.options)
-    ? body.options.map(x => String(x).trim()).filter(Boolean)
-    : [];
-  const correct = Array.isArray(body.correct)
-    ? body.correct.map(Number).filter(Number.isInteger)
-    : [];
+  const type = ["multiple", "dragdrop"].includes(body.type) ? body.type : "single";
 
   const images = Array.isArray(body.images)
     ? body.images.map(image => String(image || "")).filter(Boolean)
@@ -46,18 +39,89 @@ function parseQuestionPayload(body) {
       ? [String(body.image)]
       : [];
 
-  return {
+  const base = {
     text,
     type,
-    options,
-    correct,
     explanation: String(body.explanation || "").trim(),
     images
+  };
+
+  if (type === "dragdrop") {
+    const dragItems = Array.isArray(body.dragItems)
+      ? body.dragItems
+          .map(item => ({
+            id: String(item?.id || crypto.randomUUID()),
+            text: String(item?.text || "").trim()
+          }))
+          .filter(item => item.text)
+      : [];
+
+    const validIds = new Set(dragItems.map(item => item.id));
+
+    const dropTargets = Array.isArray(body.dropTargets)
+      ? body.dropTargets
+          .map(target => ({
+            id: String(target?.id || crypto.randomUUID()),
+            label: String(target?.label || "").trim(),
+            correctItemId: String(target?.correctItemId || "")
+          }))
+          .filter(target => target.label || target.correctItemId)
+      : [];
+
+    return {
+      ...base,
+      dragItems,
+      dropTargets: dropTargets.map(target => ({
+        ...target,
+        correctItemId: validIds.has(target.correctItemId) ? target.correctItemId : target.correctItemId
+      }))
+    };
+  }
+
+  const options = Array.isArray(body.options)
+    ? body.options.map(x => String(x).trim()).filter(Boolean)
+    : [];
+  const correct = Array.isArray(body.correct)
+    ? body.correct.map(Number).filter(Number.isInteger)
+    : [];
+
+  return {
+    ...base,
+    options,
+    correct
   };
 }
 
 function validateQuestion(question) {
   if (!question.text) return "Question text is required";
+
+  if (question.type === "dragdrop") {
+    if (question.dragItems.length < 2) return "At least two draggable items are required";
+    if (!question.dropTargets.length) return "At least one drop target is required";
+
+    const itemIds = question.dragItems.map(item => item.id);
+    const itemIdSet = new Set(itemIds);
+    if (itemIdSet.size !== itemIds.length) return "Draggable item IDs must be unique";
+
+    const targetIds = question.dropTargets.map(target => target.id);
+    if (new Set(targetIds).size !== targetIds.length) return "Drop target IDs must be unique";
+
+    if (question.dropTargets.some(target => !target.label)) {
+      return "Every drop target needs a label";
+    }
+
+    if (question.dropTargets.some(target => !itemIdSet.has(target.correctItemId))) {
+      return "Every drop target must reference a valid correct draggable item";
+    }
+
+    const correctIds = question.dropTargets.map(target => target.correctItemId);
+    if (new Set(correctIds).size !== correctIds.length) {
+      return "A draggable item can only be the correct answer for one drop target";
+    }
+
+    return null;
+  }
+
   if (question.options.length < 2) return "At least two options are required";
   if (!question.correct.length) return "At least one correct answer is required";
 
@@ -140,13 +204,9 @@ app.put("/api/exams/:examId/questions/:questionId", async (req, res) => {
   if (validationError) return res.status(400).json({ error: validationError });
 
   const updatedQuestion = {
-    ...exam.questions[questionIndex],
-    ...payload,
-    id: exam.questions[questionIndex].id
+    id: exam.questions[questionIndex].id,
+    ...payload
   };
-
-  // The new `images` field replaces the old single-image representation.
-  delete updatedQuestion.image;
 
   exam.questions[questionIndex] = updatedQuestion;
   await writeExams(exams);

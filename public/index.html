@@ -37,7 +37,6 @@
             Random questions
             <select id="questionCount"></select>
           </label>
-
           <label>
             Shuffle questions
             <select id="shuffleQuestions">
@@ -45,7 +44,6 @@
               <option value="no">No</option>
             </select>
           </label>
-
           <label>
             Shuffle answers
             <select id="shuffleAnswers">
@@ -84,6 +82,7 @@
         </div>
 
         <div id="options" class="options"></div>
+        <div id="dragDropArea" class="dragdrop-exam hidden"></div>
 
         <div id="answerBox" class="answer-box hidden">
           <strong>Correct answer</strong>
@@ -110,7 +109,7 @@
       <div class="section-head">
         <div>
           <h2 id="editTitle">Edit Exam</h2>
-          <p class="muted">Add questions to this exam.</p>
+          <p class="muted">Add or edit questions in this exam.</p>
         </div>
       </div>
 
@@ -128,14 +127,27 @@
             <select id="answerType">
               <option value="single">Single answer</option>
               <option value="multiple">Multiple answers</option>
+              <option value="dragdrop">Drag & Drop / Matching</option>
             </select>
           </label>
 
-          <div>
+          <div id="choiceEditorSection">
             <div class="label-title">Answer options</div>
             <p class="muted small">Tick each correct answer.</p>
             <div id="optionEditors"></div>
             <button type="button" id="addOptionBtn" class="secondary">+ Add Option</button>
+          </div>
+
+          <div id="dragDropEditorSection" class="hidden">
+            <div class="label-title">Draggable items</div>
+            <p class="muted small">Add all choices shown on the left side. Extra unused items can be distractors.</p>
+            <div id="dragItemEditors"></div>
+            <button type="button" id="addDragItemBtn" class="secondary">+ Add Draggable Item</button>
+
+            <div class="label-title drag-target-title">Drop targets / correct mapping</div>
+            <p class="muted small">Each target has a fixed label and one correct draggable item.</p>
+            <div id="dropTargetEditors"></div>
+            <button type="button" id="addDropTargetBtn" class="secondary">+ Add Drop Target</button>
           </div>
 
           <label>

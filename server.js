@@ -11,7 +11,8 @@ const DATA_FILE = path.join(__dirname, "data", "exams.json");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json({ limit: "10mb" }));
+// Multiple base64 images can make a question payload larger than before.
+app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 async function readExams() {
@@ -57,6 +58,7 @@ app.post("/api/exams", async (req, res) => {
     description: String(req.body.description || "").trim(),
     questions: []
   };
+
   exams.push(exam);
   await writeExams(exams);
   res.status(201).json(exam);
@@ -76,12 +78,22 @@ app.post("/api/exams/:id/questions", async (req, res) => {
     ? req.body.correct.map(Number).filter(Number.isInteger)
     : [];
 
+  const images = Array.isArray(req.body.images)
+    ? req.body.images
+        .map(image => String(image || ""))
+        .filter(Boolean)
+    : String(req.body.image || "")
+      ? [String(req.body.image)]
+      : [];
+
   if (!text) return res.status(400).json({ error: "Question text is required" });
   if (options.length < 2) return res.status(400).json({ error: "At least two options are required" });
   if (!correct.length) return res.status(400).json({ error: "At least one correct answer is required" });
+
   if (type === "single" && correct.length !== 1) {
     return res.status(400).json({ error: "Single-answer questions need exactly one correct answer" });
   }
+
   if (correct.some(i => i < 0 || i >= options.length)) {
     return res.status(400).json({ error: "Correct answer index is invalid" });
   }
@@ -93,8 +105,9 @@ app.post("/api/exams/:id/questions", async (req, res) => {
     options,
     correct,
     explanation: String(req.body.explanation || "").trim(),
-    image: String(req.body.image || "")
+    images
   };
+
   exam.questions.push(question);
   await writeExams(exams);
   res.status(201).json(question);

@@ -70,7 +70,19 @@
 
       <div class="card">
         <h2 id="questionText"></h2>
-        <img id="questionImage" class="question-image hidden" alt="Question image">
+
+        <div id="questionImageGallery" class="image-gallery hidden">
+          <button id="prevImageBtn" type="button" class="image-arrow secondary" aria-label="Previous image">&#10094;</button>
+          <button id="zoomImageBtn" type="button" class="image-stage" aria-label="Open image at original size">
+            <img id="questionImage" class="question-image" alt="Question image">
+          </button>
+          <button id="nextImageBtn" type="button" class="image-arrow secondary" aria-label="Next image">&#10095;</button>
+          <div class="image-toolbar">
+            <span id="imageCounter" class="muted small"></span>
+            <button id="zoomImageTextBtn" type="button" class="secondary">Zoom / Original size</button>
+          </div>
+        </div>
+
         <div id="options" class="options"></div>
 
         <div id="answerBox" class="answer-box hidden">
@@ -86,7 +98,7 @@
           <button id="nextBtn" class="secondary">Next</button>
         </div>
         <div>
-          <button id="showAnswerBtn" class="secondary">Show Answer</button>
+          <button id="showAnswerBtn" class="secondary">Show Answers</button>
           <button id="finishBtn">Finish Exam</button>
         </div>
       </div>
@@ -127,10 +139,11 @@
           </div>
 
           <label>
-            Image
-            <input id="imageFile" type="file" accept="image/*">
+            Images
+            <input id="imageFile" type="file" accept="image/*" multiple>
           </label>
-          <img id="imagePreview" class="preview hidden" alt="Preview">
+          <p class="muted small">You can select multiple images for one question.</p>
+          <div id="imagePreviewList" class="image-preview-list"></div>
 
           <label>
             Explanation
@@ -164,6 +177,20 @@
           <button type="button" id="cancelDialogBtn" class="secondary">Cancel</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="imageZoomDialog" class="image-zoom-dialog">
+      <div class="zoom-header">
+        <span id="zoomImageCounter" class="muted"></span>
+        <div class="actions">
+          <button id="zoomPrevBtn" type="button" class="secondary">&#10094; Previous</button>
+          <button id="zoomNextBtn" type="button" class="secondary">Next &#10095;</button>
+          <button id="closeZoomBtn" type="button">Close</button>
+        </div>
+      </div>
+      <div class="zoom-scroll">
+        <img id="zoomedImage" alt="Question image at original size">
+      </div>
     </dialog>
   </main>
 

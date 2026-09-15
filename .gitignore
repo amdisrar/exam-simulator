@@ -45,6 +45,19 @@ Thumbs.db
 # Optional local backup files
 *.bak
 *.backup
+*.bckup
+
+# SQLite runtime database (local only, never committed)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.db-journal
+
+# Migration backups of the legacy JSON source (never committed)
+data/backups/
+
+# Future question image uploads (Issue #6)
+uploads/
 
 # Package manager cache
 .npm/

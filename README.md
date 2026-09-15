@@ -170,6 +170,12 @@ private ids are not confirmed, while an exam they may view but not modify return
 See [`docs/authorization.md`](docs/authorization.md) for the rule table, the
 route matrix and the pre-authentication exam handling.
 
+Exams can also be **shared** with specific people: an owner (or an admin) grants
+another active user view/take access to a private exam without making it public
+or transferring ownership. Recipients can take the exam but never edit it,
+change its visibility, or re-share it. Shares are revoked, not deleted, and
+re-sharing the same person restores their access.
+
 The import is idempotent. It is keyed on a hash of the source file and only inserts exam ids
 that do not already exist, so restarting never duplicates records and a newly copied
 `exams.json` contributes only its new exams. A timestamped backup is written to

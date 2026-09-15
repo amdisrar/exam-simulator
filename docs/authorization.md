@@ -44,7 +44,7 @@ always written as `view`; edit is deliberately not grantable.
 |---|---|
 | `GET /api/exams` | filtered in SQL (`examAccessFilter`), never post-filtered |
 | `GET /api/exams/:id` | view |
-| `GET /api/exams/:id/export` | view |
+| `GET /api/exams/:id/export` | **edit** — a full dump including every correct answer, so it stays a management operation rather than part of "view and take" |
 | `PATCH /api/exams/:id` (visibility) | edit |
 | `POST /api/exams/:id/questions` | edit |
 | `PUT/DELETE /api/exams/:examId/questions/:questionId` | edit |
@@ -87,9 +87,55 @@ the SQL helper (`examAccessFilter`) are pure functions with no HTTP coupling, so
 the planned REST API (#16) and MCP server (#17) can call the same rules rather
 than reimplementing them.
 
+## Sharing an exam (#12)
+
+An owner (or an admin) can grant another active user access to a private exam
+without transferring ownership or making it public.
+
+| Endpoint | Who | Behaviour |
+|---|---|---|
+| `GET /api/exams/:id/assignments` | owner / admin | Active shares with the recipient's display details |
+| `POST /api/exams/:id/assignments` | owner / admin | Body `{ userId }` or `{ email }` |
+| `DELETE /api/exams/:id/assignments/:assignmentId` | owner / admin | Revokes the share |
+| `GET /api/assignable-users?search=` | any signed-in user | Share candidates |
+
+Rules enforced server-side:
+
+- Sharing requires **owner or admin** — the same `requireExamAccess(..., "edit")`
+  guard as editing, so a recipient cannot re-share and an unrelated user gets
+  **404**.
+- A share grants **view/take only**. `permission` is always stored as `view`, and
+  recipients get **403** on question writes, visibility changes and every
+  assignment endpoint.
+- **Disabled, deleted and unknown accounts** are refused with the same `404`, so
+  the endpoint cannot be used to probe account status. Only active accounts are
+  offerable.
+- **Self-assignment** is rejected (`400`); duplicates return `409` rather than
+  creating a second row — `(exam_id, assignee_user_id)` is unique in the schema.
+- **Revoking is a soft revoke** (`revoked_at`), preserving the record of who
+  shared what, and re-sharing revives that row instead of duplicating it. Access
+  ends on the very next request unless the exam is public, owned, or the caller
+  is an admin.
+- Because the recipient's access flows through the central `examAccess`
+  predicate, removing the assignment removes it from their list, detail,
+  questions, images and export at once.
+
+### Directory lookup is deliberately minimised
+
+`GET /api/assignable-users` exists because an owner has to find a colleague to
+share with, but it is intentionally narrow:
+
+- a search term of at least **2 characters** is required, so the directory cannot
+  be paged through or dumped;
+- the caller, disabled accounts and deleted accounts are excluded;
+- results are capped and contain **only** `id`, `name`, `email` and `pictureUrl`
+  — never roles, status or timestamps.
+
+Sharing is also possible by exact email address, for deployments that would
+rather not expose a search endpoint at all.
+
 ## Deliberately out of scope
 
 Exam soft-delete and restore endpoints live in #13 (the schema fields already
-exist). Assignment management lives in #12 — only the read path is implemented
-here, because #10's visibility rule depends on it. Ownership transfer is a
-future feature.
+exist). Ownership transfer is a future feature. The assignment model carries
+`expires_at` for time-limited shares, but nothing sets it yet.

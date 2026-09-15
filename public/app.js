@@ -174,7 +174,132 @@ function renderExamAccess() {
   $("examVisibilitySelect").value = exam.visibility;
   $("editExamBtn").classList.toggle("hidden", !exam.canEdit);
   $("examSettingsMessage").textContent = "";
+
+  // Sharing is equally restricted to the owner (or an admin).
+  $("shareSection").classList.toggle("hidden", !exam.canEdit);
+  $("shareMessage").textContent = "";
+  $("shareSearch").value = "";
+  $("shareResults").classList.add("hidden");
+  if (exam.canEdit) {
+    loadAssignments(exam.id).catch(err => { $("shareMessage").textContent = err.message; });
+  }
 }
+
+/* ------------------------------------------------------- sharing an exam */
+
+function renderAssignees(assignments) {
+  const host = $("assigneeList");
+  host.innerHTML = "";
+
+  if (!assignments.length) {
+    const empty = document.createElement("li");
+    empty.className = "muted small";
+    empty.textContent = "Not shared with anyone yet.";
+    host.appendChild(empty);
+    return;
+  }
+
+  for (const assignment of assignments) {
+    const item = document.createElement("li");
+    item.className = "assignee";
+
+    const who = document.createElement("span");
+    who.textContent = assignment.name || assignment.email;
+    item.appendChild(who);
+
+    const email = document.createElement("span");
+    email.className = "muted small";
+    email.textContent = assignment.email;
+    item.appendChild(email);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => removeAssignment(assignment));
+    item.appendChild(remove);
+
+    host.appendChild(item);
+  }
+}
+
+function renderShareResults(users) {
+  const host = $("shareResults");
+  host.innerHTML = "";
+  host.classList.toggle("hidden", !users.length);
+
+  for (const user of users) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary";
+    button.textContent = user.name ? `${user.name} — ${user.email}` : user.email;
+    button.addEventListener("click", () => addAssignment(user.id));
+    item.appendChild(button);
+    host.appendChild(item);
+  }
+}
+
+async function loadAssignments(examId) {
+  const data = await api(`/api/exams/${examId}/assignments`);
+  renderAssignees(data.assignments);
+}
+
+async function addAssignment(userId) {
+  const message = $("shareMessage");
+  try {
+    await api(`/api/exams/${state.selectedExam.id}/assignments`, {
+      method: "POST",
+      body: JSON.stringify({ userId })
+    });
+    $("shareSearch").value = "";
+    renderShareResults([]);
+    await loadAssignments(state.selectedExam.id);
+    message.textContent = "Shared. They can now view and take this exam.";
+    message.className = "form-message success";
+  } catch (err) {
+    message.textContent = err.message;
+    message.className = "form-message form-error";
+  }
+}
+
+async function removeAssignment(assignment) {
+  const who = assignment.name || assignment.email;
+  if (!window.confirm(`Remove ${who}'s access to this exam?`)) return;
+
+  const message = $("shareMessage");
+  try {
+    await api(`/api/exams/${state.selectedExam.id}/assignments/${assignment.id}`, { method: "DELETE" });
+    await loadAssignments(state.selectedExam.id);
+    message.textContent = `Access removed for ${who}.`;
+    message.className = "form-message success";
+  } catch (err) {
+    message.textContent = err.message;
+    message.className = "form-message form-error";
+  }
+}
+
+let shareSearchTimer = null;
+$("shareSearch").addEventListener("input", () => {
+  clearTimeout(shareSearchTimer);
+  const term = $("shareSearch").value.trim();
+
+  // The server also enforces this, so the directory cannot be enumerated.
+  if (term.length < 2) {
+    renderShareResults([]);
+    return;
+  }
+
+  shareSearchTimer = setTimeout(async () => {
+    try {
+      const data = await api(`/api/assignable-users?search=${encodeURIComponent(term)}`);
+      renderShareResults(data.users);
+    } catch (err) {
+      $("shareMessage").textContent = err.message;
+      $("shareMessage").className = "form-message form-error";
+    }
+  }, 250);
+});
 
 async function openExam(id) {
   stopTimer();

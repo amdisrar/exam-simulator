@@ -13,6 +13,7 @@
 // *modify* is reported as 403.
 
 import { nowIso } from "../db/index.js";
+import { hasActiveAssignment } from "../repositories/assignments.js";
 
 export const ACCESS_ADMIN = "admin";
 export const ACCESS_OWNER = "owner";
@@ -30,19 +31,6 @@ export function isAdmin(user) {
  */
 function unrestricted(user) {
   return !user || isAdmin(user);
-}
-
-export function hasActiveAssignment(db, examId, userId) {
-  if (!userId || !examId) return false;
-  const row = db.prepare(`
-    SELECT 1 AS present
-    FROM exam_assignments
-    WHERE exam_id = ? AND assignee_user_id = ?
-      AND revoked_at IS NULL
-      AND (expires_at IS NULL OR expires_at > ?)
-    LIMIT 1
-  `).get(examId, userId, nowIso());
-  return Boolean(row);
 }
 
 /**

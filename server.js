@@ -15,6 +15,15 @@ import { claimLegacyExams, createExam, getExamById, listExams, updateExamVisibil
 import { exportExam, importExams } from "./repositories/exam-json.js";
 import { validateQuestion } from "./repositories/question-rules.js";
 import {
+  createAssignment,
+  findAssignableUser,
+  findAssignableUserByEmail,
+  listAssignmentsForExam,
+  MIN_SEARCH_LENGTH,
+  revokeAssignment,
+  searchAssignableUsers
+} from "./repositories/assignments.js";
+import {
   createQuestion,
   deleteQuestion,
   findImageByUid,
@@ -49,6 +58,28 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
+
+// Assignments expose the recipient's display details so an owner can tell who
+// they shared with; nothing else about the account is revealed.
+function assignmentView(row) {
+  return {
+    id: row.id,
+    userId: row.assignee_user_id,
+    name: row.assignee_name || "",
+    email: row.assignee_email || "",
+    pictureUrl: row.assignee_picture || "",
+    createdAt: row.created_at
+  };
+}
+
+function assignableUserView(row) {
+  return {
+    id: row.id,
+    name: row.name || "",
+    email: row.email || "",
+    pictureUrl: row.picture_url || ""
+  };
+}
 
 function fileSlug(value) {
   const slug = String(value || "")
@@ -300,6 +331,21 @@ app.post("/auth/logout", (req, res) => {
 // Everything below requires an authenticated user once Google is configured.
 app.use("/api", requireAuth(authConfig));
 
+// People a signed-in user may share an exam with. Intentionally narrow: a
+// minimum search length prevents browsing the directory, the caller and
+// inactive accounts are excluded, and only display fields are returned.
+app.get("/api/assignable-users", (req, res) => {
+  const search = String(req.query.search || "").trim();
+  if (search.length < MIN_SEARCH_LENGTH) {
+    return res.json({ users: [], minSearchLength: MIN_SEARCH_LENGTH });
+  }
+  const users = searchAssignableUsers(db, {
+    search,
+    excludeUserId: req.user ? req.user.id : null
+  });
+  res.json({ users: users.map(assignableUserView) });
+});
+
 // ---------------------------------------------------------------- admin users
 
 app.get("/api/admin/users", requireAdmin(authConfig), (req, res) => {
@@ -334,7 +380,9 @@ app.get("/api/exams/:id", requireExamAccess(db, authConfig, "view", "id"), (req,
   });
 });
 
-app.get("/api/exams/:id/export", requireExamAccess(db, authConfig, "view", "id"), (req, res) => {
+// Export dumps the whole exam including every correct answer, so it is a
+// management operation (owner/admin) rather than part of "view and take".
+app.get("/api/exams/:id/export", requireExamAccess(db, authConfig, "edit", "id"), (req, res) => {
   const result = exportExam(db, req.params.id);
   if (!result) return res.status(404).json({ error: "Exam not found" });
 
@@ -391,6 +439,57 @@ app.patch("/api/exams/:id", requireExamAccess(db, authConfig, "edit", "id"), (re
 
   updateExamVisibility(db, req.params.id, visibility);
   res.json({ id: req.params.id, visibility, canEdit: req.canEdit });
+});
+
+// Sharing is restricted to the exam owner (or an admin) by requireExamAccess.
+
+app.get("/api/exams/:id/assignments", requireExamAccess(db, authConfig, "edit", "id"), (req, res) => {
+  res.json({ assignments: listAssignmentsForExam(db, req.params.id).map(assignmentView) });
+});
+
+app.post("/api/exams/:id/assignments", requireExamAccess(db, authConfig, "edit", "id"), (req, res) => {
+  const body = req.body || {};
+  let assignee = null;
+
+  if (body.userId !== undefined) {
+    const userId = Number(body.userId);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(400).json({ error: "A valid userId is required." });
+    }
+    assignee = findAssignableUser(db, userId);
+  } else if (body.email !== undefined) {
+    const email = String(body.email).trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return res.status(400).json({ error: "A valid email address is required." });
+    }
+    assignee = findAssignableUserByEmail(db, email);
+  } else {
+    return res.status(400).json({ error: "Provide a userId or an email address." });
+  }
+
+  // Nonexistent, disabled and deleted accounts are indistinguishable here, so
+  // the endpoint cannot be used to probe account status.
+  if (!assignee) {
+    return res.status(404).json({ error: "No active user matches that account." });
+  }
+  if (req.user && assignee.id === req.user.id) {
+    return res.status(400).json({ error: "You already have access to this exam." });
+  }
+
+  const assignment = createAssignment(db, {
+    examId: req.params.id,
+    assigneeUserId: assignee.id,
+    assignedByUserId: req.user ? req.user.id : null
+  });
+
+  res.status(201).json({ assignment: assignmentView(assignment) });
+});
+
+app.delete("/api/exams/:id/assignments/:assignmentId", requireExamAccess(db, authConfig, "edit", "id"), (req, res) => {
+  if (!revokeAssignment(db, req.params.id, req.params.assignmentId)) {
+    return res.status(404).json({ error: "Assignment not found" });
+  }
+  res.status(204).end();
 });
 
 app.post("/api/exams/:id/questions", requireExamAccess(db, authConfig, "edit", "id"), (req, res) => {

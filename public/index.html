@@ -84,6 +84,21 @@
         </div>
         <p id="examSettingsMessage" class="form-message"></p>
 
+        <div id="shareSection" class="share-section hidden">
+          <h3>Share this exam</h3>
+          <p class="muted small">
+            People you share with can view and take this exam. They cannot edit it,
+            change its visibility, or share it with anyone else.
+          </p>
+          <div class="share-add">
+            <input id="shareSearch" type="search" placeholder="Search name or email (2+ characters)">
+            <ul id="shareResults" class="share-results hidden"></ul>
+          </div>
+          <p id="shareMessage" class="form-message"></p>
+          <h4>People with access</h4>
+          <ul id="assigneeList" class="assignee-list"></ul>
+        </div>
+
         <div class="mode-picker">
           <button id="practiceModeBtn" type="button" class="mode-card active">
             <strong>Practice Mode</strong>

@@ -119,6 +119,26 @@ stays authoritative.
 
 The full schema is documented in [`docs/exam-json-format.md`](docs/exam-json-format.md).
 
+## Authentication
+
+Sign-in uses Google OpenID Connect, with a local account provisioned on first
+login. Configure it with:
+
+```bash
+export GOOGLE_CLIENT_ID="…"
+export GOOGLE_CLIENT_SECRET="…"
+export INITIAL_ADMIN_EMAIL="you@example.com"   # optional bootstrap admin
+export APP_BASE_URL="https://exams.example.com" # optional, used for the redirect
+```
+
+Without `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` the server runs with
+authentication **disabled** and logs a warning, so local development keeps
+working; with `NODE_ENV=production` it refuses to start instead. Once
+configured, every `/api/*` route except `/api/me` requires a signed-in user.
+
+See [`docs/auth.md`](docs/auth.md) for the full flow, session handling and
+security notes.
+
 The import is idempotent. It is keyed on a hash of the source file and only inserts exam ids
 that do not already exist, so restarting never duplicates records and a newly copied
 `exams.json` contributes only its new exams. A timestamped backup is written to

@@ -3,6 +3,11 @@ import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
 import { initializeStorage } from "./db/bootstrap.js";
+import { describeAuthState, loadAuthConfig } from "./auth/config.js";
+import { createAuthRequest, exchangeCodeForTokens, profileFromClaims, verifyIdToken } from "./auth/google.js";
+import { attachUser, authEnforced, requireAuth } from "./auth/middleware.js";
+import { createSession, deleteSession, parseCookies, serializeCookie } from "./auth/sessions.js";
+import { upsertGoogleUser } from "./auth/users.js";
 import { resolveImagePath } from "./db/image-store.js";
 import { createExam, examExists, getExamById, listExams } from "./repositories/exams.js";
 import { exportExam, importExams } from "./repositories/exam-json.js";
@@ -19,6 +24,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const { db, path: DB_PATH, importResult } = initializeStorage();
+
+const authConfig = loadAuthConfig();
+let authState;
+try {
+  authState = describeAuthState(authConfig);
+} catch (error) {
+  console.error(`[auth] ${error.message}`);
+  process.exit(1);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -110,6 +124,145 @@ function parseQuestionPayload(body) {
     correct
   };
 }
+
+app.use(attachUser(db, authConfig));
+
+const OAUTH_TX_COOKIE = "exam_oauth_tx";
+
+function callbackUrl(req) {
+  if (authConfig.baseUrl) return `${authConfig.baseUrl}/auth/google/callback`;
+  return `${req.protocol}://${req.get("host")}/auth/google/callback`;
+}
+
+function transactionCookie(value, maxAge) {
+  return serializeCookie(OAUTH_TX_COOKIE, value, {
+    httpOnly: true,
+    sameSite: "Lax",
+    secure: authConfig.isProduction,
+    path: "/",
+    maxAge
+  });
+}
+
+function sessionCookie(value, maxAge) {
+  return serializeCookie(authConfig.cookieName, value, {
+    httpOnly: true,
+    sameSite: "Lax",
+    secure: authConfig.isProduction,
+    path: "/",
+    maxAge
+  });
+}
+
+function authErrorPage(message) {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sign-in failed</title>
+<link rel="stylesheet" href="/styles.css"></head>
+<body><main class="shell"><div class="card auth-card">
+<h2>Sign-in failed</h2>
+<p class="muted">${message.replace(/[<>&]/g, character => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[character]))}</p>
+<p><a class="auth-button" href="/auth/google">Try again</a></p>
+</div></main></body></html>`;
+}
+
+app.get("/api/me", (req, res) => {
+  res.json({ authEnabled: authEnforced(authConfig), user: req.user });
+});
+
+app.get("/auth/google", (req, res) => {
+  if (!authConfig.configured) {
+    return res.status(503).json({ error: "Google authentication is not configured" });
+  }
+  const { url, transaction } = createAuthRequest({ config: authConfig, redirectUri: callbackUrl(req) });
+  res.setHeader("Set-Cookie", transactionCookie(JSON.stringify(transaction), 600));
+  res.redirect(url);
+});
+
+app.get("/auth/google/callback", async (req, res) => {
+  const clearTransaction = transactionCookie("", 0);
+
+  if (!authConfig.configured) {
+    return res.status(503).json({ error: "Google authentication is not configured" });
+  }
+
+  try {
+    let transaction = null;
+    try {
+      const cookies = parseCookies(req.headers.cookie);
+      transaction = cookies[OAUTH_TX_COOKIE] ? JSON.parse(cookies[OAUTH_TX_COOKIE]) : null;
+    } catch {
+      transaction = null;
+    }
+
+    const fail = message => {
+      res.setHeader("Set-Cookie", clearTransaction);
+      return res.status(400).send(authErrorPage(message));
+    };
+
+    if (req.query.error) {
+      return fail(`Google returned an error: ${String(req.query.error)}.`);
+    }
+    // The state parameter is compared against the value we stored before the
+    // redirect, which is what protects the callback against CSRF.
+    if (!transaction || !req.query.state || req.query.state !== transaction.state) {
+      return fail("This sign-in link is no longer valid. Please start again.");
+    }
+    if (!req.query.code) {
+      return fail("Google did not return an authorization code.");
+    }
+
+    const tokens = await exchangeCodeForTokens({
+      code: String(req.query.code),
+      verifier: transaction.verifier,
+      redirectUri: callbackUrl(req),
+      config: authConfig
+    });
+
+    const claims = await verifyIdToken(tokens.id_token, {
+      clientId: authConfig.clientId,
+      nonce: transaction.nonce
+    });
+    const profile = profileFromClaims(claims);
+
+    if (!profile.emailVerified) {
+      return fail("Your Google account email address is not verified.");
+    }
+
+    const { user, blocked } = upsertGoogleUser(db, profile, {
+      initialAdminEmail: authConfig.initialAdminEmail
+    });
+
+    if (blocked) {
+      res.setHeader("Set-Cookie", clearTransaction);
+      return res.status(403).send(authErrorPage("This account has been disabled. Please contact an administrator."));
+    }
+
+    const { token } = createSession(db, user.id, {
+      ttlDays: authConfig.sessionTtlDays,
+      userAgent: req.get("user-agent") || null,
+      ipAddress: req.ip || null
+    });
+
+    res.setHeader("Set-Cookie", [
+      sessionCookie(token, authConfig.sessionTtlDays * 24 * 60 * 60),
+      clearTransaction
+    ]);
+    res.redirect("/");
+  } catch (error) {
+    console.error(`[auth] sign-in failed: ${error.message}`);
+    res.setHeader("Set-Cookie", clearTransaction);
+    res.status(400).send(authErrorPage("We could not complete the Google sign-in. Please try again."));
+  }
+});
+
+app.post("/auth/logout", (req, res) => {
+  if (req.sessionToken) deleteSession(db, req.sessionToken);
+  res.setHeader("Set-Cookie", sessionCookie("", 0));
+  res.status(204).end();
+});
+
+// Everything below requires an authenticated user once Google is configured.
+app.use("/api", requireAuth(authConfig));
 
 app.get("/api/exams", (_req, res) => {
   res.json(listExams(db));
@@ -235,4 +388,10 @@ app.use((error, _req, res, _next) => {
 app.listen(PORT, () => {
   console.log(`Exam Simulator running at http://localhost:${PORT}`);
   console.log(`Storage: SQLite (${DB_PATH}) [${importResult.status}${importResult.reason ? `: ${importResult.reason}` : ""}]`);
+  if (authState === "disabled") {
+    console.warn("[auth] Google authentication is NOT configured - running WITHOUT authentication.");
+    console.warn("[auth] Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable sign-in.");
+  } else {
+    console.log(`Auth: Google sign-in enabled${authConfig.initialAdminEmail ? ` (bootstrap admin: ${authConfig.initialAdminEmail})` : ""}`);
+  }
 });

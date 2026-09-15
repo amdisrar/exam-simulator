@@ -29,16 +29,68 @@ function showView(id) {
   $("homeBtn").classList.toggle("hidden", id === "examListView");
 }
 
+function showAuthGate() {
+  views.forEach(v => $(v).classList.add("hidden"));
+  $("authGate").classList.remove("hidden");
+  $("homeBtn").classList.add("hidden");
+  $("userBox").classList.add("hidden");
+}
+
 async function api(url, options = {}) {
   const res = await fetch(url, {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     ...options
   });
+  if (res.status === 401) {
+    showAuthGate();
+    throw new Error("Please sign in to continue.");
+  }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || `Request failed (${res.status})`);
   }
   return res.status === 204 ? null : res.json();
+}
+
+function renderUserBox(user) {
+  const box = $("userBox");
+  box.innerHTML = "";
+  box.classList.remove("hidden");
+
+  if (user.pictureUrl) {
+    const avatar = document.createElement("img");
+    avatar.className = "user-avatar";
+    avatar.src = user.pictureUrl;
+    avatar.alt = "";
+    avatar.referrerPolicy = "no-referrer";
+    box.appendChild(avatar);
+  }
+
+  const name = document.createElement("span");
+  name.className = "user-name";
+  name.textContent = user.name || user.email || "Signed in";
+  box.appendChild(name);
+
+  if (user.role === "admin") {
+    const badge = document.createElement("span");
+    badge.className = "pill";
+    badge.textContent = "admin";
+    box.appendChild(badge);
+  }
+
+  const signOut = document.createElement("button");
+  signOut.type = "button";
+  signOut.className = "secondary";
+  signOut.textContent = "Sign out";
+  signOut.addEventListener("click", async () => {
+    try {
+      await fetch("/auth/logout", { method: "POST" });
+    } catch {
+      // Reloading below re-checks the session anyway.
+    }
+    window.location.reload();
+  });
+  box.appendChild(signOut);
 }
 
 function escapeHtml(s) {
@@ -981,6 +1033,26 @@ $("questionForm").addEventListener("submit", async e => {
 
 ensureCancelEditButton();
 resetQuestionForm();
-loadExamList().catch(err => {
+
+async function bootstrap() {
+  let session;
+  try {
+    session = await api("/api/me");
+  } catch {
+    // A 401 already surfaced the sign-in gate.
+    return;
+  }
+
+  if (session && session.user) renderUserBox(session.user);
+
+  if (session && session.authEnabled && !session.user) {
+    showAuthGate();
+    return;
+  }
+
+  await loadExamList();
+}
+
+bootstrap().catch(err => {
   $("examList").innerHTML = `<div class="card"><p>${escapeHtml(err.message)}</p></div>`;
 });

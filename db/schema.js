@@ -237,5 +237,61 @@ export const MIGRATIONS = [
         assignUid.run(crypto.randomUUID(), row.id);
       }
     }
+  },
+  {
+    // Issue #8: local user accounts and server-side sessions.
+    //
+    // The users table is rebuilt to line up with the vocabulary used by the
+    // authentication and administration issues: role is 'normal' or 'admin',
+    // and status is 'active' or 'disabled' (replacing the is_active flag).
+    // The table is empty when this runs, so no account data is at risk.
+    version: 3,
+    name: "auth-users-and-sessions",
+    foreignKeysOff: true,
+    up(db) {
+      db.exec(`
+        CREATE TABLE users_new (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          google_sub    TEXT UNIQUE,
+          email         TEXT,
+          name          TEXT,
+          picture_url   TEXT,
+          role          TEXT NOT NULL DEFAULT 'normal' CHECK (role IN ('normal', 'admin')),
+          status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+          created_at    TEXT NOT NULL,
+          updated_at    TEXT NOT NULL,
+          last_login_at TEXT,
+          deleted_at    TEXT
+        );
+
+        INSERT INTO users_new
+          (id, google_sub, email, name, picture_url, role, status, created_at, updated_at, last_login_at, deleted_at)
+        SELECT id, google_sub, email, name, picture_url,
+               CASE WHEN role = 'admin' THEN 'admin' ELSE 'normal' END,
+               CASE WHEN is_active = 1 THEN 'active' ELSE 'disabled' END,
+               created_at, updated_at, last_login_at, deleted_at
+        FROM users;
+
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+        CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+        CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
+
+        -- Server-side sessions. Only a hash of the cookie value is stored.
+        CREATE TABLE IF NOT EXISTS sessions (
+          token_hash   TEXT PRIMARY KEY,
+          user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at   TEXT NOT NULL,
+          last_seen_at TEXT NOT NULL,
+          expires_at   TEXT NOT NULL,
+          user_agent   TEXT,
+          ip_address   TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+      `);
+    }
   }
 ];

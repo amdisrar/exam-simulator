@@ -31,15 +31,35 @@ export function runMigrations(db, { logger = console } = {}) {
 
   const applied = [];
   for (const migration of pending) {
-    const apply = db.transaction(() => {
-      migration.up(db);
-      db.pragma(`user_version = ${migration.version}`);
-      db.prepare(
-        "INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)"
-      ).run(migration.version, migration.name, new Date().toISOString());
-    });
+    // Rebuilding a table that other tables reference requires foreign keys to
+    // be off, because SQLite cannot disable them from inside a transaction.
+    const foreignKeysOff = Boolean(migration.foreignKeysOff);
+    if (foreignKeysOff) db.pragma("foreign_keys = OFF");
 
-    apply();
+    try {
+      const apply = db.transaction(() => {
+        migration.up(db);
+
+        if (foreignKeysOff) {
+          const violations = db.pragma("foreign_key_check");
+          if (violations.length) {
+            throw new Error(
+              `migration ${migration.version} left foreign key violations: ${JSON.stringify(violations.slice(0, 5))}`
+            );
+          }
+        }
+
+        db.pragma(`user_version = ${migration.version}`);
+        db.prepare(
+          "INSERT OR REPLACE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)"
+        ).run(migration.version, migration.name, new Date().toISOString());
+      });
+
+      apply();
+    } finally {
+      if (foreignKeysOff) db.pragma("foreign_keys = ON");
+    }
+
     applied.push(migration.version);
     logger.log(`[db] applied migration ${migration.version} (${migration.name})`);
   }

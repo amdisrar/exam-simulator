@@ -13,8 +13,19 @@
         <h1>Exam Simulator</h1>
         <p>Practice by range or run timed randomized exams.</p>
       </div>
-      <button id="homeBtn" class="secondary hidden">All Exams</button>
+      <div class="topbar-actions">
+        <button id="homeBtn" class="secondary hidden">All Exams</button>
+        <div id="userBox" class="user-box hidden"></div>
+      </div>
     </header>
+
+    <section id="authGate" class="hidden">
+      <div class="card auth-card">
+        <h2>Sign in required</h2>
+        <p class="muted">Sign in with your Google account to use the Exam Simulator.</p>
+        <a class="auth-button" href="/auth/google">Sign in with Google</a>
+      </div>
+    </section>
 
     <section id="examListView">
       <div class="section-head">

@@ -73,11 +73,14 @@ export async function exchangeCodeForTokens({ code, verifier, redirectUri, confi
     data = null;
   }
 
+  // Google reports OAuth failures as a structured body alongside a 4xx status
+  // (invalid_grant, invalid_client, redirect_uri_mismatch, ...). Prefer that
+  // detail over the bare status code so the reason is actually visible.
+  if (data && data.error) {
+    throw new Error(`Google token exchange failed: ${data.error_description || data.error}`);
+  }
   if (!response.ok || !data) {
     throw new Error(`Google token exchange failed (HTTP ${response.status})`);
-  }
-  if (data.error) {
-    throw new Error(`Google token exchange failed: ${data.error_description || data.error}`);
   }
   if (!data.id_token) {
     throw new Error("Google token response did not include an id_token");

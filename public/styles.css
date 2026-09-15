@@ -248,3 +248,15 @@ button.danger:hover {
   border: 1px solid #d1d5db;
   min-width: 220px;
 }
+
+.error-detail {
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  color: #374151;
+}

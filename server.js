@@ -163,13 +163,26 @@ function sessionCookie(value, maxAge) {
   });
 }
 
-function authErrorPage(message) {
+function escapeHtmlText(value) {
+  return String(value ?? "").replace(/[<>&"]/g, character =>
+    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[character]));
+}
+
+function authErrorPage(message, details = null) {
+  // The reason is only shown when not running in production, so a
+  // misconfiguration is diagnosable locally without leaking internals.
+  const detailBlock = details && !authConfig.isProduction
+    ? `<p class="muted small">Reason (shown outside production):</p>
+<pre class="error-detail">${escapeHtmlText(details)}</pre>`
+    : "";
+
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Sign-in failed</title>
 <link rel="stylesheet" href="/styles.css"></head>
 <body><main class="shell"><div class="card auth-card">
 <h2>Sign-in failed</h2>
-<p class="muted">${message.replace(/[<>&]/g, character => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[character]))}</p>
+<p class="muted">${escapeHtmlText(message)}</p>
+${detailBlock}
 <p><a class="auth-button" href="/auth/google">Try again</a></p>
 </div></main></body></html>`;
 }
@@ -259,9 +272,12 @@ app.get("/auth/google/callback", async (req, res) => {
     res.redirect("/");
   } catch (error) {
     const cause = error?.cause?.code || error?.cause?.message;
-    console.error(`[auth] sign-in failed: ${error.message}${cause ? ` [${cause}]` : ""}`);
+    const details = `${error.message}${cause ? ` [${cause}]` : ""}`;
+    console.error(`[auth] sign-in failed: ${details}`);
     res.setHeader("Set-Cookie", clearTransaction);
-    res.status(400).send(authErrorPage("We could not complete the Google sign-in. Please try again."));
+    res.status(400).send(
+      authErrorPage("We could not complete the Google sign-in. Please try again.", details)
+    );
   }
 });
 

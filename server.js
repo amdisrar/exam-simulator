@@ -258,7 +258,8 @@ app.get("/auth/google/callback", async (req, res) => {
     ]);
     res.redirect("/");
   } catch (error) {
-    console.error(`[auth] sign-in failed: ${error.message}`);
+    const cause = error?.cause?.code || error?.cause?.message;
+    console.error(`[auth] sign-in failed: ${error.message}${cause ? ` [${cause}]` : ""}`);
     res.setHeader("Set-Cookie", clearTransaction);
     res.status(400).send(authErrorPage("We could not complete the Google sign-in. Please try again."));
   }

@@ -10,6 +10,7 @@
 // discarded.
 
 import crypto from "crypto";
+import { fetchWithRetry } from "./http.js";
 
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
@@ -48,7 +49,7 @@ export function createAuthRequest({ config, redirectUri }) {
   return { url: url.toString(), transaction: { state, nonce, verifier } };
 }
 
-export async function exchangeCodeForTokens({ code, verifier, redirectUri, config, fetchImpl = fetch }) {
+export async function exchangeCodeForTokens({ code, verifier, redirectUri, config, fetchImpl = fetchWithRetry }) {
   const body = new URLSearchParams({
     code,
     client_id: config.clientId,
@@ -107,7 +108,7 @@ function decodeJsonSegment(segment) {
  * Verify a Google id_token: signature, issuer, audience, expiry and nonce.
  * Only after all checks pass are the claims returned.
  */
-export async function verifyIdToken(idToken, { clientId, nonce, fetchImpl = fetch }) {
+export async function verifyIdToken(idToken, { clientId, nonce, fetchImpl = fetchWithRetry }) {
   const parts = String(idToken || "").split(".");
   if (parts.length !== 3) throw new Error("Malformed id_token");
 

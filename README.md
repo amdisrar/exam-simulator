@@ -48,12 +48,14 @@ exam-simulator/
 │   ├── schema.js           # schema definition / migrations
 │   ├── migrations.js       # versioned migration runner
 │   ├── json-import.js      # one-way, idempotent JSON -> SQLite import
+│   ├── image-store.js      # image validation + filesystem storage
 │   └── bootstrap.js        # storage initialization
 ├── repositories/
 │   ├── exams.js            # exam data access
 │   └── questions.js        # question data access
 ├── scripts/
 │   └── db-migrate.js       # npm run db:migrate
+├── uploads/                # question image files (git-ignored)
 ├── public/
 │   ├── index.html
 │   ├── app.js
@@ -73,7 +75,27 @@ On startup the application:
 
 1. opens `data/exam-simulator.db`, enables WAL mode and foreign keys;
 2. applies any pending, versioned schema migrations (safe to run repeatedly);
-3. imports `data/exams.json` if it has not been imported yet.
+3. imports `data/exams.json` if it has not been imported yet;
+4. moves any remaining inline Base64 image rows onto the filesystem.
+
+### Question images
+
+Image files live outside the database under `uploads/exams/<exam>/<question>/<image id>.<ext>`.
+SQLite stores only metadata: the public image id, the relative path, MIME type, byte size,
+checksum, original filename and display order.
+
+- The editor sends images as data URLs; the server validates the declared type against the
+  file's magic bytes, enforces an 8 MB per-image limit, and writes a file. Base64 never
+  reaches the database.
+- Images are served through `GET /api/images/<id>`. The id is an opaque UUID and the path is
+  resolved from the database, so no client-supplied value ever reaches the filesystem.
+- Removing an image in the editor deletes its file only when no other record references it,
+  and soft-deleting an exam never removes files from disk.
+- Databases created before this change are converted automatically on first start, after a
+  snapshot of the database is written to `data/backups/`.
+
+If images are stored elsewhere (for example a mounted volume), keep the `uploads/` directory
+next to `data/` so backups capture both.
 
 The import is idempotent. It is keyed on a hash of the source file and only inserts exam ids
 that do not already exist, so restarting never duplicates records and a newly copied

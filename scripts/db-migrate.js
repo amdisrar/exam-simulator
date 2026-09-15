@@ -11,7 +11,7 @@ import { getSchemaVersion } from "../db/migrations.js";
 import { getImportStatus } from "../db/json-import.js";
 
 const logger = console;
-const { db, path: dbPath, importResult } = initializeStorage({ logger });
+const { db, path: dbPath, importResult, imageResult } = initializeStorage({ logger });
 
 const schemaVersion = getSchemaVersion(db);
 const journalMode = db.pragma("journal_mode", { simple: true });
@@ -27,6 +27,9 @@ console.log(`journal mode    : ${journalMode}`);
 console.log(`foreign keys    : ${foreignKeys ? "on" : "off"}`);
 console.log(`exams/questions : ${examCount} / ${questionCount}`);
 console.log(`json import     : ${importResult.status}${importResult.reason ? ` (${importResult.reason})` : ""}`);
+if (imageResult) {
+  console.log(`inline images   : ${imageResult.migrated} moved to disk, ${imageResult.skipped} left inline`);
+}
 if (importStatus) {
   console.log(`last import     : ${importStatus.status} at ${importStatus.at}${importStatus.backup ? ` (backup: ${importStatus.backup})` : ""}`);
 }

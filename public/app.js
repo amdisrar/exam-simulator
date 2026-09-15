@@ -736,14 +736,18 @@ function toggleQuestionEditorType() {
   $("dragDropEditorSection").classList.toggle("hidden", !drag);
 }
 
+function imageSource(image) {
+  return image && typeof image === "object" ? image.data : image;
+}
+
 function renderImagePreviews() {
   const host = $("imagePreviewList");
   host.innerHTML = "";
-  state.imageData.forEach((src, index) => {
+  state.imageData.forEach((image, index) => {
     const item = document.createElement("div");
     item.className = "image-preview-item";
     const img = document.createElement("img");
-    img.src = src;
+    img.src = imageSource(image);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "remove-image";
@@ -924,7 +928,7 @@ $("imageFile").addEventListener("change", async e => {
     const loaded = await Promise.all(files.map(file => new Promise((resolve, reject) => {
       if (!file.type.startsWith("image/")) return reject(new Error(`${file.name} is not an image.`));
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
+      reader.onload = () => resolve({ data: reader.result, name: file.name });
       reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
       reader.readAsDataURL(file);
     })));

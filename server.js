@@ -3,10 +3,12 @@ import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
 import { initializeStorage } from "./db/bootstrap.js";
+import { resolveImagePath } from "./db/image-store.js";
 import { createExam, examExists, getExamById, listExams } from "./repositories/exams.js";
 import {
   createQuestion,
   deleteQuestion,
+  findImageByUid,
   findQuestionRow,
   updateQuestion
 } from "./repositories/questions.js";
@@ -26,11 +28,24 @@ function parseQuestionPayload(body) {
   const text = String(body.text || "").trim();
   const type = ["multiple", "dragdrop"].includes(body.type) ? body.type : "single";
 
-  const images = Array.isArray(body.images)
-    ? body.images.map(image => String(image || "")).filter(Boolean)
+  // Images arrive either as a plain string (an existing image URL, a Base64
+  // data URL, or a legacy external reference) or as { data, name } when the
+  // editor knows the original filename. They are persisted as files, so the
+  // Base64 payload never reaches the database.
+  const imageInputs = Array.isArray(body.images)
+    ? body.images
     : String(body.image || "")
-      ? [String(body.image)]
+      ? [body.image]
       : [];
+
+  const images = imageInputs
+    .map(image => {
+      if (image && typeof image === "object") {
+        return { data: String(image.data || ""), name: image.name ? String(image.name) : null };
+      }
+      return { data: String(image || ""), name: null };
+    })
+    .filter(image => image.data);
 
   const base = {
     text,
@@ -192,6 +207,39 @@ app.delete("/api/exams/:examId/questions/:questionId", (req, res) => {
   }
 
   res.status(204).end();
+});
+
+app.get("/api/images/:uid", (req, res) => {
+  const image = findImageByUid(db, req.params.uid);
+  // Only filesystem-backed records are served here; inline legacy values are
+  // returned directly inside the question payload.
+  if (!image || image.storage !== "file" || !image.file_path) {
+    return res.status(404).json({ error: "Image not found" });
+  }
+
+  let absolutePath;
+  try {
+    // The path comes from our own database and is re-validated against the
+    // upload root, so a crafted URL can never escape it.
+    absolutePath = resolveImagePath(image.file_path);
+  } catch {
+    return res.status(404).json({ error: "Image not found" });
+  }
+
+  res.type(image.mime_type || "application/octet-stream");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cache-Control", "private, max-age=3600");
+  res.sendFile(absolutePath, error => {
+    if (error && !res.headersSent) res.status(404).json({ error: "Image not found" });
+  });
+});
+
+app.use((error, _req, res, _next) => {
+  if (error && Number.isInteger(error.status) && error.status >= 400 && error.status < 500) {
+    return res.status(error.status).json({ error: error.message });
+  }
+  console.error(error);
+  res.status(500).json({ error: "Internal server error" });
 });
 
 app.listen(PORT, () => {

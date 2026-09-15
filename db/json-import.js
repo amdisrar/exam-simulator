@@ -14,12 +14,11 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { DATA_DIR, ROOT_DIR, nowIso } from "./index.js";
+import { BACKUP_DIR, DATA_DIR, ROOT_DIR, nowIso } from "./index.js";
 import { examExists, insertExam } from "../repositories/exams.js";
 import { insertQuestion } from "../repositories/questions.js";
 
 export const SOURCE_PATH = path.join(DATA_DIR, "exams.json");
-export const BACKUP_DIR = path.join(DATA_DIR, "backups");
 export const IMPORT_MARKER_KEY = "json_import:exams.json";
 
 export function readMeta(db, key) {

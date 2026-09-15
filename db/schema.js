@@ -15,6 +15,8 @@
 // - Soft-delete columns exist for future phases (#13 Trash) but are not yet
 //   used: the current DELETE route keeps hard-deleting to preserve behaviour.
 
+import crypto from "crypto";
+
 export const QUESTION_TYPES = ["single", "multiple", "dragdrop"];
 export const EXAM_VISIBILITIES = ["public", "private"];
 export const IMAGE_STORAGE_MODES = ["inline", "file"];
@@ -204,6 +206,36 @@ export const MIGRATIONS = [
           updated_at TEXT NOT NULL
         );
       `);
+    }
+  },
+  {
+    // Issue #6: question images move out of the database and onto the
+    // filesystem. `data` keeps holding a payload only for rows that are still
+    // inline (legacy file references that are not Base64, or rows awaiting the
+    // one-time conversion in db/image-store.js). New images are always written
+    // as files and referenced by `file_path`, and are addressed publicly by
+    // `uid` so no filesystem path is ever exposed to clients.
+    version: 2,
+    name: "question-images-filesystem",
+    up(db) {
+      db.exec(`
+        ALTER TABLE question_images ADD COLUMN uid TEXT;
+        ALTER TABLE question_images ADD COLUMN original_filename TEXT;
+        ALTER TABLE question_images ADD COLUMN byte_size INTEGER;
+        ALTER TABLE question_images ADD COLUMN sha256 TEXT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_question_images_uid
+          ON question_images(uid);
+        CREATE INDEX IF NOT EXISTS idx_question_images_file_path
+          ON question_images(file_path);
+      `);
+
+      // Every existing image needs a stable public id before it can be served.
+      const rows = db.prepare("SELECT id FROM question_images WHERE uid IS NULL").all();
+      const assignUid = db.prepare("UPDATE question_images SET uid = ? WHERE id = ?");
+      for (const row of rows) {
+        assignUid.run(crypto.randomUUID(), row.id);
+      }
     }
   }
 ];

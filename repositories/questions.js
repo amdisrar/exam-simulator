@@ -135,9 +135,14 @@ export function findQuestionRow(db, examId, uid) {
 }
 
 export function findImageByUid(db, uid) {
-  return db
-    .prepare("SELECT uid, storage, file_path, data, mime_type FROM question_images WHERE uid = ?")
-    .get(uid) || null;
+  // The owning exam is included so image requests can be authorized against the
+  // same visibility rules as the exam itself.
+  return db.prepare(`
+    SELECT i.uid, i.storage, i.file_path, i.data, i.mime_type, q.exam_id AS exam_id
+    FROM question_images i
+    JOIN questions q ON q.id = i.question_id
+    WHERE i.uid = ?
+  `).get(uid) || null;
 }
 
 export function nextQuestionPosition(db, examId) {

@@ -120,24 +120,60 @@ function shuffled(arr) {
   return copy;
 }
 
+const ACCESS_LABELS = {
+  owner: "Yours",
+  assigned: "Shared with you",
+  public: "Public",
+  admin: "Admin access"
+};
+
+function accessLabel(access) {
+  return ACCESS_LABELS[access] || "";
+}
+
 async function loadExamList() {
   state.examList = await api("/api/exams");
   const host = $("examList");
   host.innerHTML = "";
   if (!state.examList.length) {
-    host.innerHTML = `<div class="card"><p>No exams found. Create your first exam.</p></div>`;
+    host.innerHTML = `<div class="card"><p>No exams available to you yet. Create one, or ask an owner to share theirs.</p></div>`;
     return;
   }
   for (const exam of state.examList) {
     const card = document.createElement("article");
     card.className = "exam-card";
+    const label = accessLabel(exam.access);
     card.innerHTML = `
       <h3>${escapeHtml(exam.title)}</h3>
       <p>${escapeHtml(exam.description || "No description")}</p>
+      <div class="exam-meta">
+        ${label ? `<span class="pill access-${escapeHtml(exam.access)}">${escapeHtml(label)}</span>` : ""}
+        <span class="pill visibility-${escapeHtml(exam.visibility)}">${escapeHtml(exam.visibility)}</span>
+      </div>
       <div class="count">${exam.questionCount} question${exam.questionCount === 1 ? "" : "s"}</div>`;
     card.addEventListener("click", () => openExam(exam.id));
     host.appendChild(card);
   }
+}
+
+function renderExamAccess() {
+  const exam = state.selectedExam;
+  if (!exam) return;
+
+  const badge = $("examAccessBadge");
+  badge.textContent = accessLabel(exam.access);
+  badge.className = `pill access-${exam.access}`;
+  badge.classList.toggle("hidden", !accessLabel(exam.access));
+
+  const visibilityPill = $("examVisibilityPill");
+  visibilityPill.textContent = exam.visibility;
+  visibilityPill.className = `pill visibility-${exam.visibility}`;
+
+  // Only an owner (or admin) may change visibility; everyone else just sees it.
+  $("examVisibilityControl").classList.toggle("hidden", !exam.canEdit);
+  $("examVisibilitySelect").value = exam.visibility;
+  $("editExamBtn").classList.toggle("hidden", !exam.canEdit);
+  $("examSettingsMessage").textContent = "";
 }
 
 async function openExam(id) {
@@ -148,8 +184,33 @@ async function openExam(id) {
   configureForExamSize();
   setMode("practice");
   $("configMessage").textContent = "";
+  renderExamAccess();
   showView("configureView");
 }
+
+$("examVisibilitySelect").addEventListener("change", async event => {
+  const visibility = event.target.value;
+  const previous = state.selectedExam ? state.selectedExam.visibility : "private";
+  const message = $("examSettingsMessage");
+
+  try {
+    await api(`/api/exams/${state.selectedExam.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ visibility })
+    });
+    state.selectedExam.visibility = visibility;
+    renderExamAccess();
+    // Set the confirmation after renderExamAccess(), which clears the message.
+    message.textContent = visibility === "public"
+      ? "This exam is now public: anyone signed in can see and take it."
+      : "This exam is now private: only you, assigned users and admins can see it.";
+    message.className = "form-message success";
+  } catch (err) {
+    message.textContent = err.message;
+    message.className = "form-message form-error";
+    event.target.value = previous;
+  }
+});
 
 function configureForExamSize() {
   const total = state.selectedExam?.questions?.length || 0;
@@ -933,6 +994,8 @@ $("practiceRangeEnd").addEventListener("input", updatePracticeRangeSummary);
 $("startExamBtn").addEventListener("click", startConfiguredSession);
 
 $("editExamBtn").addEventListener("click", () => {
+  // Assigned recipients may take the exam but never edit it.
+  if (state.selectedExam && !state.selectedExam.canEdit) return;
   resetQuestionForm();
   renderQuestionBank();
   showView("editView");

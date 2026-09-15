@@ -71,6 +71,19 @@
         <h2 id="configureTitle"></h2>
         <p id="configureDescription" class="muted"></p>
 
+        <div class="exam-access-row">
+          <span id="examAccessBadge" class="pill"></span>
+          <span id="examVisibilityPill" class="pill"></span>
+          <label id="examVisibilityControl" class="inline-control hidden">
+            Visibility
+            <select id="examVisibilitySelect">
+              <option value="private">Private — only you and assigned users</option>
+              <option value="public">Public — anyone signed in</option>
+            </select>
+          </label>
+        </div>
+        <p id="examSettingsMessage" class="form-message"></p>
+
         <div class="mode-picker">
           <button id="practiceModeBtn" type="button" class="mode-card active">
             <strong>Practice Mode</strong>

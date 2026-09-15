@@ -154,6 +154,22 @@ configured, every `/api/*` route except `/api/me` requires a signed-in user.
 See [`docs/auth.md`](docs/auth.md) for the full flow, session handling and
 security notes.
 
+## Authorization
+
+Exams have an owner and a visibility (`private` by default). A signed-in user can
+reach an exam when it is public, they own it, or it has been assigned to them;
+only the owner or an admin can edit it or change its visibility. Admins can
+manage every exam.
+
+Authorization is centralised in `auth/authorization.js` and enforced server-side
+on every exam, question, image and export route — hidden UI controls are never
+the protection. Requests for an exam the caller may not view return **404** so
+private ids are not confirmed, while an exam they may view but not modify returns
+**403**.
+
+See [`docs/authorization.md`](docs/authorization.md) for the rule table, the
+route matrix and the pre-authentication exam handling.
+
 The import is idempotent. It is keyed on a hash of the source file and only inserts exam ids
 that do not already exist, so restarting never duplicates records and a newly copied
 `exams.json` contributes only its new exams. A timestamped backup is written to

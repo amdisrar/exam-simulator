@@ -8,9 +8,10 @@ import { describeAuthState, loadAuthConfig } from "./auth/config.js";
 import { createAuthRequest, exchangeCodeForTokens, profileFromClaims, verifyIdToken } from "./auth/google.js";
 import { attachUser, authEnforced, requireAdmin, requireAuth } from "./auth/middleware.js";
 import { createSession, deleteSession, parseCookies, serializeCookie } from "./auth/sessions.js";
-import { countActiveAdmins, listUsers, toPublicUser, updateUserAccess, upsertGoogleUser } from "./auth/users.js";
+import { countActiveAdmins, findFirstActiveAdmin, listUsers, toPublicUser, updateUserAccess, upsertGoogleUser } from "./auth/users.js";
+import { examAccess, findExamAccessRow, requireExamAccess } from "./auth/authorization.js";
 import { resolveImagePath } from "./db/image-store.js";
-import { createExam, examExists, getExamById, listExams } from "./repositories/exams.js";
+import { claimLegacyExams, createExam, getExamById, listExams, updateExamVisibility, VISIBILITIES } from "./repositories/exams.js";
 import { exportExam, importExams } from "./repositories/exam-json.js";
 import { validateQuestion } from "./repositories/question-rules.js";
 import {
@@ -250,9 +251,11 @@ app.get("/auth/google/callback", async (req, res) => {
       return fail("Your Google account email address is not verified.");
     }
 
-    const { user, blocked } = upsertGoogleUser(db, profile, {
+    const { user, blocked, bootstrapped } = upsertGoogleUser(db, profile, {
       initialAdminEmail: authConfig.initialAdminEmail
     });
+
+    if (bootstrapped) claimLegacyExams(db, user.id);
 
     if (blocked) {
       res.setHeader("Set-Cookie", clearTransaction);
@@ -287,6 +290,13 @@ app.post("/auth/logout", (req, res) => {
   res.status(204).end();
 });
 
+// Pre-authentication exams have no owner. The first admin claims them once;
+// this also covers the case where an admin already exists at startup.
+{
+  const bootstrapAdmin = findFirstActiveAdmin(db);
+  if (bootstrapAdmin) claimLegacyExams(db, bootstrapAdmin.id);
+}
+
 // Everything below requires an authenticated user once Google is configured.
 app.use("/api", requireAuth(authConfig));
 
@@ -309,17 +319,22 @@ app.patch("/api/admin/users/:id", requireAdmin(authConfig), (req, res) => {
   res.json({ user: toPublicUser(user), activeAdmins: countActiveAdmins(db) });
 });
 
-app.get("/api/exams", (_req, res) => {
-  res.json(listExams(db));
+app.get("/api/exams", (req, res) => {
+  res.json(listExams(db, req.user));
 });
 
-app.get("/api/exams/:id", (req, res) => {
+app.get("/api/exams/:id", requireExamAccess(db, authConfig, "view", "id"), (req, res) => {
   const exam = getExamById(db, req.params.id);
   if (!exam) return res.status(404).json({ error: "Exam not found" });
-  res.json(exam);
+  res.json({
+    ...exam,
+    visibility: req.exam.visibility,
+    access: req.examAccess,
+    canEdit: req.canEdit
+  });
 });
 
-app.get("/api/exams/:id/export", (req, res) => {
+app.get("/api/exams/:id/export", requireExamAccess(db, authConfig, "view", "id"), (req, res) => {
   const result = exportExam(db, req.params.id);
   if (!result) return res.status(404).json({ error: "Exam not found" });
 
@@ -346,18 +361,39 @@ app.post("/api/exams", (req, res) => {
   const title = String(req.body.title || "").trim();
   if (!title) return res.status(400).json({ error: "Title is required" });
 
+  // Ownership is always the authenticated creator: a client-supplied owner is
+  // ignored so ownership cannot be set by request.
   const exam = createExam(db, {
     title,
     description: String(req.body.description || "").trim()
+  }, {
+    ownerUserId: req.user ? req.user.id : null,
+    visibility: req.body.visibility
   });
 
-  res.status(201).json(exam);
+  res.status(201).json({ ...exam, access: "owner", canEdit: true });
 });
 
-app.post("/api/exams/:id/questions", (req, res) => {
-  if (!examExists(db, req.params.id)) {
-    return res.status(404).json({ error: "Exam not found" });
+app.patch("/api/exams/:id", requireExamAccess(db, authConfig, "edit", "id"), (req, res) => {
+  const body = req.body || {};
+
+  if (body.ownerUserId !== undefined || body.owner_user_id !== undefined) {
+    return res.status(400).json({ error: "Exam ownership cannot be changed." });
   }
+  if (body.visibility === undefined) {
+    return res.status(400).json({ error: 'Provide a visibility of "public" or "private".' });
+  }
+
+  const visibility = String(body.visibility);
+  if (!VISIBILITIES.includes(visibility)) {
+    return res.status(400).json({ error: 'Visibility must be either "public" or "private".' });
+  }
+
+  updateExamVisibility(db, req.params.id, visibility);
+  res.json({ id: req.params.id, visibility, canEdit: req.canEdit });
+});
+
+app.post("/api/exams/:id/questions", requireExamAccess(db, authConfig, "edit", "id"), (req, res) => {
 
   const payload = parseQuestionPayload(req.body);
   const validationError = validateQuestion(payload);
@@ -366,11 +402,7 @@ app.post("/api/exams/:id/questions", (req, res) => {
   res.status(201).json(createQuestion(db, req.params.id, payload));
 });
 
-app.put("/api/exams/:examId/questions/:questionId", (req, res) => {
-  if (!examExists(db, req.params.examId)) {
-    return res.status(404).json({ error: "Exam not found" });
-  }
-
+app.put("/api/exams/:examId/questions/:questionId", requireExamAccess(db, authConfig, "edit", "examId"), (req, res) => {
   if (!findQuestionRow(db, req.params.examId, req.params.questionId)) {
     return res.status(404).json({ error: "Question not found" });
   }
@@ -385,11 +417,7 @@ app.put("/api/exams/:examId/questions/:questionId", (req, res) => {
   res.json(updatedQuestion);
 });
 
-app.delete("/api/exams/:examId/questions/:questionId", (req, res) => {
-  if (!examExists(db, req.params.examId)) {
-    return res.status(404).json({ error: "Exam not found" });
-  }
-
+app.delete("/api/exams/:examId/questions/:questionId", requireExamAccess(db, authConfig, "edit", "examId"), (req, res) => {
   if (!deleteQuestion(db, req.params.examId, req.params.questionId)) {
     return res.status(404).json({ error: "Question not found" });
   }
@@ -402,6 +430,12 @@ app.get("/api/images/:uid", (req, res) => {
   // Only filesystem-backed records are served here; inline legacy values are
   // returned directly inside the question payload.
   if (!image || image.storage !== "file" || !image.file_path) {
+    return res.status(404).json({ error: "Image not found" });
+  }
+
+  // An image is only as visible as the exam it belongs to.
+  const owningExam = findExamAccessRow(db, image.exam_id);
+  if (!owningExam || !examAccess(db, owningExam, req.user)) {
     return res.status(404).json({ error: "Image not found" });
   }
 

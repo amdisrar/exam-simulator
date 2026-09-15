@@ -179,3 +179,72 @@ dialog form{padding:22px}
 .auth-button:hover {
   background: #1666c9;
 }
+
+/* Admin user management (Issue #9) */
+.user-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.user-table th,
+.user-table td {
+  text-align: left;
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: middle;
+}
+
+.user-table th {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.user-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.user-actions button {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.6rem;
+}
+
+button.danger {
+  background: #dc2626;
+  color: #ffffff;
+  border: 1px solid #dc2626;
+}
+
+button.danger:hover {
+  background: #b91c1c;
+}
+
+.pill.status-disabled {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.pill.status-active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.form-message.success {
+  color: #166534;
+}
+
+#adminSearch {
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  min-width: 220px;
+}

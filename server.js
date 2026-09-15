@@ -5,9 +5,9 @@ import crypto from "crypto";
 import { initializeStorage } from "./db/bootstrap.js";
 import { describeAuthState, loadAuthConfig } from "./auth/config.js";
 import { createAuthRequest, exchangeCodeForTokens, profileFromClaims, verifyIdToken } from "./auth/google.js";
-import { attachUser, authEnforced, requireAuth } from "./auth/middleware.js";
+import { attachUser, authEnforced, requireAdmin, requireAuth } from "./auth/middleware.js";
 import { createSession, deleteSession, parseCookies, serializeCookie } from "./auth/sessions.js";
-import { upsertGoogleUser } from "./auth/users.js";
+import { countActiveAdmins, listUsers, toPublicUser, updateUserAccess, upsertGoogleUser } from "./auth/users.js";
 import { resolveImagePath } from "./db/image-store.js";
 import { createExam, examExists, getExamById, listExams } from "./repositories/exams.js";
 import { exportExam, importExams } from "./repositories/exam-json.js";
@@ -263,6 +263,25 @@ app.post("/auth/logout", (req, res) => {
 
 // Everything below requires an authenticated user once Google is configured.
 app.use("/api", requireAuth(authConfig));
+
+// ---------------------------------------------------------------- admin users
+
+app.get("/api/admin/users", requireAdmin(authConfig), (req, res) => {
+  const search = req.query.search === undefined ? "" : String(req.query.search);
+  res.json({
+    users: listUsers(db, { search }).map(toPublicUser),
+    activeAdmins: countActiveAdmins(db)
+  });
+});
+
+app.patch("/api/admin/users/:id", requireAdmin(authConfig), (req, res) => {
+  const body = req.body || {};
+  const role = body.role === undefined ? undefined : String(body.role);
+  const status = body.status === undefined ? undefined : String(body.status);
+
+  const user = updateUserAccess(db, req.params.id, { role, status });
+  res.json({ user: toPublicUser(user), activeAdmins: countActiveAdmins(db) });
+});
 
 app.get("/api/exams", (_req, res) => {
   res.json(listExams(db));

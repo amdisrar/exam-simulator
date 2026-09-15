@@ -63,3 +63,27 @@ deployment cannot serve the application unprotected.
 Once Google is configured, every `/api/*` route except `/api/me` requires a
 session and returns `401` otherwise. Authorization is always enforced
 server-side; hiding UI elements is never treated as protection.
+
+## Administration
+
+Users with role `admin` get an **Admin · Users** page in the application and the
+matching API:
+
+- `GET /api/admin/users` — list accounts (optional `?search=` by name or email)
+- `PATCH /api/admin/users/:id` — change `role` (`normal`/`admin`) and/or `status`
+  (`active`/`disabled`)
+
+Rules enforced on the server:
+
+- Normal users receive `403` from both endpoints.
+- The **last active administrator** cannot be demoted or disabled (`409`).
+- Unknown users return `404`; invalid role/status values and empty changes
+  return `400`.
+- Changes apply to existing sessions immediately, because the user record is
+  read on every request.
+- Disabling a user deletes their sessions.
+- User records are never physically deleted in this phase.
+
+When authentication is not configured (development only) the API is open, as it
+is for the rest of the application. In `NODE_ENV=production` the server refuses
+to start without credentials, so this cannot happen in a real deployment.

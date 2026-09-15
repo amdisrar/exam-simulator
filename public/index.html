@@ -15,9 +15,37 @@
       </div>
       <div class="topbar-actions">
         <button id="homeBtn" class="secondary hidden">All Exams</button>
+        <button id="adminBtn" class="secondary hidden">Admin</button>
         <div id="userBox" class="user-box hidden"></div>
       </div>
     </header>
+
+    <section id="adminView" class="hidden">
+      <div class="section-head">
+        <div>
+          <h2>Admin · Users</h2>
+          <p>Manage local accounts, roles and access.</p>
+        </div>
+        <input id="adminSearch" type="search" placeholder="Search name or email">
+      </div>
+      <p id="adminMessage" class="form-message"></p>
+      <div class="card">
+        <table class="user-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Last login</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="adminUserRows"></tbody>
+        </table>
+      </div>
+    </section>
 
     <section id="authGate" class="hidden">
       <div class="card auth-card">

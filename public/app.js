@@ -13,11 +13,12 @@ const state = {
   mode: "practice",
   sessionConfig: {},
   examEndsAt: null,
-  timerHandle: null
+  timerHandle: null,
+  currentUser: null
 };
 
 const $ = id => document.getElementById(id);
-const views = ["examListView", "configureView", "examView", "editView"];
+const views = ["examListView", "configureView", "examView", "editView", "adminView"];
 
 function makeId(prefix = "id") {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
@@ -1034,6 +1035,162 @@ $("questionForm").addEventListener("submit", async e => {
 ensureCancelEditButton();
 resetQuestionForm();
 
+/* ------------------------------------------------------------ admin: users */
+
+function formatTimestamp(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString();
+}
+
+function adminActionButton(label, className, handler) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  button.addEventListener("click", handler);
+  return button;
+}
+
+async function updateUserAccess(id, changes, confirmation) {
+  if (confirmation && !window.confirm(confirmation)) return;
+  $("adminMessage").textContent = "";
+  try {
+    await api(`/api/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(changes) });
+    $("adminMessage").textContent = "User updated.";
+    $("adminMessage").className = "form-message success";
+  } catch (err) {
+    $("adminMessage").textContent = err.message;
+    $("adminMessage").className = "form-message form-error";
+  }
+  await loadAdminUsers($("adminSearch").value);
+}
+
+function renderAdminUsers(data) {
+  const host = $("adminUserRows");
+  host.innerHTML = "";
+
+  if (!data.users.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 7;
+    cell.textContent = "No users found.";
+    row.appendChild(cell);
+    host.appendChild(row);
+    return;
+  }
+
+  const me = state.currentUser;
+
+  for (const user of data.users) {
+    const row = document.createElement("tr");
+
+    const userCell = document.createElement("td");
+    userCell.className = "user-cell";
+    if (user.pictureUrl) {
+      const avatar = document.createElement("img");
+      avatar.className = "user-avatar";
+      avatar.src = user.pictureUrl;
+      avatar.alt = "";
+      avatar.referrerPolicy = "no-referrer";
+      userCell.appendChild(avatar);
+    }
+    const name = document.createElement("span");
+    name.textContent = user.name || "(no name)";
+    userCell.appendChild(name);
+    if (me && user.id === me.id) {
+      const badge = document.createElement("span");
+      badge.className = "pill";
+      badge.textContent = "you";
+      userCell.appendChild(badge);
+    }
+    row.appendChild(userCell);
+
+    const emailCell = document.createElement("td");
+    emailCell.textContent = user.email || "—";
+    row.appendChild(emailCell);
+
+    const roleCell = document.createElement("td");
+    const rolePill = document.createElement("span");
+    rolePill.className = "pill";
+    rolePill.textContent = user.role;
+    roleCell.appendChild(rolePill);
+    row.appendChild(roleCell);
+
+    const statusCell = document.createElement("td");
+    const statusPill = document.createElement("span");
+    statusPill.className = `pill status-${user.status}`;
+    statusPill.textContent = user.status;
+    statusCell.appendChild(statusPill);
+    row.appendChild(statusCell);
+
+    const createdCell = document.createElement("td");
+    createdCell.className = "muted small";
+    createdCell.textContent = formatTimestamp(user.createdAt);
+    row.appendChild(createdCell);
+
+    const loginCell = document.createElement("td");
+    loginCell.className = "muted small";
+    loginCell.textContent = formatTimestamp(user.lastLoginAt);
+    row.appendChild(loginCell);
+
+    const actions = document.createElement("td");
+    actions.className = "user-actions";
+
+    if (user.role === "normal") {
+      actions.appendChild(adminActionButton("Make admin", "secondary", () =>
+        updateUserAccess(user.id, { role: "admin" })));
+    } else {
+      actions.appendChild(adminActionButton("Remove admin", "secondary", () =>
+        updateUserAccess(user.id, { role: "normal" },
+          `Remove administrator access from ${user.name || user.email}?`)));
+    }
+
+    if (user.status === "active") {
+      actions.appendChild(adminActionButton("Disable", "danger", () =>
+        updateUserAccess(user.id, { status: "disabled" },
+          `Disable ${user.name || user.email}? They will be signed out and cannot sign in again.`)));
+    } else {
+      actions.appendChild(adminActionButton("Enable", "secondary", () =>
+        updateUserAccess(user.id, { status: "active" })));
+    }
+
+    row.appendChild(actions);
+    host.appendChild(row);
+  }
+}
+
+async function loadAdminUsers(search = "") {
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  const data = await api(`/api/admin/users${query}`);
+  renderAdminUsers(data);
+}
+
+async function openAdminView() {
+  $("adminMessage").textContent = "";
+  $("adminMessage").className = "form-message";
+  showView("adminView");
+  try {
+    await loadAdminUsers($("adminSearch").value);
+  } catch (err) {
+    $("adminMessage").textContent = err.message;
+    $("adminMessage").className = "form-message form-error";
+  }
+}
+
+$("adminBtn").addEventListener("click", openAdminView);
+
+let adminSearchTimer = null;
+$("adminSearch").addEventListener("input", () => {
+  clearTimeout(adminSearchTimer);
+  adminSearchTimer = setTimeout(() => {
+    loadAdminUsers($("adminSearch").value).catch(err => {
+      $("adminMessage").textContent = err.message;
+    });
+  }, 250);
+});
+
 async function bootstrap() {
   let session;
   try {
@@ -1043,7 +1200,11 @@ async function bootstrap() {
     return;
   }
 
-  if (session && session.user) renderUserBox(session.user);
+  if (session && session.user) {
+    state.currentUser = session.user;
+    renderUserBox(session.user);
+    if (session.user.role === "admin") $("adminBtn").classList.remove("hidden");
+  }
 
   if (session && session.authEnabled && !session.user) {
     showAuthGate();

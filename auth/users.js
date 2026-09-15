@@ -2,6 +2,17 @@
 
 import { nowIso } from "../db/index.js";
 
+export const ROLES = ["normal", "admin"];
+export const STATUSES = ["active", "disabled"];
+
+export class UserAdminError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.name = "UserAdminError";
+    this.status = status;
+  }
+}
+
 export function toPublicUser(row) {
   if (!row) return null;
   return {
@@ -126,4 +137,62 @@ export function upsertGoogleUser(db, profile, { initialAdminEmail = "", logger =
   run();
 
   return { user: row, created, blocked: false, bootstrapped };
+}
+
+/**
+ * Change a user's role and/or status (Issue #9).
+ *
+ * Enforced server-side:
+ * - the target must exist and not be soft-deleted
+ * - the last remaining active administrator cannot be demoted or disabled
+ * - disabling a user immediately ends their sessions
+ *
+ * Users are never physically deleted in this phase.
+ */
+export function updateUserAccess(db, id, { role, status } = {}) {
+  const userId = Number(id);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new UserAdminError("A valid user id is required.");
+  }
+  if (role !== undefined && !ROLES.includes(role)) {
+    throw new UserAdminError(`Role must be one of: ${ROLES.join(", ")}.`);
+  }
+  if (status !== undefined && !STATUSES.includes(status)) {
+    throw new UserAdminError(`Status must be one of: ${STATUSES.join(", ")}.`);
+  }
+  if (role === undefined && status === undefined) {
+    throw new UserAdminError("Nothing to update: provide a role and/or a status.");
+  }
+
+  const apply = db.transaction(() => {
+    const user = findUserById(db, userId);
+    if (!user || user.deleted_at) {
+      throw new UserAdminError("User not found.", 404);
+    }
+
+    const nextRole = role === undefined ? user.role : role;
+    const nextStatus = status === undefined ? user.status : status;
+
+    const wasActiveAdmin = user.role === "admin" && user.status === "active";
+    const staysActiveAdmin = nextRole === "admin" && nextStatus === "active";
+    if (wasActiveAdmin && !staysActiveAdmin && countActiveAdmins(db) <= 1) {
+      throw new UserAdminError(
+        "This is the last active administrator. Promote or re-enable another administrator first.",
+        409
+      );
+    }
+
+    if (nextRole !== user.role || nextStatus !== user.status) {
+      db.prepare("UPDATE users SET role = ?, status = ?, updated_at = ? WHERE id = ?")
+        .run(nextRole, nextStatus, nowIso(), userId);
+    }
+
+    if (nextStatus === "disabled") {
+      db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
+    }
+
+    return findUserById(db, userId);
+  });
+
+  return apply();
 }

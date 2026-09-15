@@ -15,6 +15,7 @@ import fs from "fs";
 import { nowIso } from "../db/index.js";
 import {
   buildImageRecord,
+  copyImageIntoStore,
   isDataUrl,
   parsePublicImageUrl,
   removeUnreferencedFiles,
@@ -172,6 +173,22 @@ function writeQuestionImages(db, { questionId, questionUid, examId, existingImag
   let position = 0;
 
   for (const entry of images || []) {
+    // Canonical JSON import: copy an already-stored file into this question's
+    // own directory so the imported copy owns its images.
+    if (entry && typeof entry === "object" && entry.copyFrom) {
+      const { record, relativePath, absolutePath } = copyImageIntoStore(entry.copyFrom, {
+        examId,
+        questionUid
+      });
+      writtenFiles.push(absolutePath);
+      insertImage.run(
+        questionId, position, "file", null, relativePath, record.mime,
+        record.originalFilename, record.byteSize, record.sha256, record.uid, timestamp
+      );
+      position += 1;
+      continue;
+    }
+
     const { value, filename } = normalizeImageInput(entry);
     if (!value) continue;
 

@@ -5,6 +5,8 @@ import crypto from "crypto";
 import { initializeStorage } from "./db/bootstrap.js";
 import { resolveImagePath } from "./db/image-store.js";
 import { createExam, examExists, getExamById, listExams } from "./repositories/exams.js";
+import { exportExam, importExams } from "./repositories/exam-json.js";
+import { validateQuestion } from "./repositories/question-rules.js";
 import {
   createQuestion,
   deleteQuestion,
@@ -23,6 +25,15 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
+
+function fileSlug(value) {
+  const slug = String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return slug || "exam";
+}
 
 function parseQuestionPayload(body) {
   const text = String(body.text || "").trim();
@@ -100,50 +111,6 @@ function parseQuestionPayload(body) {
   };
 }
 
-function validateQuestion(question) {
-  if (!question.text) return "Question text is required";
-
-  if (question.type === "dragdrop") {
-    if (question.dragItems.length < 2) return "At least two draggable items are required";
-    if (!question.dropTargets.length) return "At least one drop target is required";
-
-    const itemIds = question.dragItems.map(item => item.id);
-    const itemIdSet = new Set(itemIds);
-    if (itemIdSet.size !== itemIds.length) return "Draggable item IDs must be unique";
-
-    const targetIds = question.dropTargets.map(target => target.id);
-    if (new Set(targetIds).size !== targetIds.length) return "Drop target IDs must be unique";
-
-    if (question.dropTargets.some(target => !target.label)) {
-      return "Every drop target needs a label";
-    }
-
-    if (question.dropTargets.some(target => !itemIdSet.has(target.correctItemId))) {
-      return "Every drop target must reference a valid correct draggable item";
-    }
-
-    const correctIds = question.dropTargets.map(target => target.correctItemId);
-    if (new Set(correctIds).size !== correctIds.length) {
-      return "A draggable item can only be the correct answer for one drop target";
-    }
-
-    return null;
-  }
-
-  if (question.options.length < 2) return "At least two options are required";
-  if (!question.correct.length) return "At least one correct answer is required";
-
-  if (question.type === "single" && question.correct.length !== 1) {
-    return "Single-answer questions need exactly one correct answer";
-  }
-
-  if (question.correct.some(i => i < 0 || i >= question.options.length)) {
-    return "Correct answer index is invalid";
-  }
-
-  return null;
-}
-
 app.get("/api/exams", (_req, res) => {
   res.json(listExams(db));
 });
@@ -152,6 +119,29 @@ app.get("/api/exams/:id", (req, res) => {
   const exam = getExamById(db, req.params.id);
   if (!exam) return res.status(404).json({ error: "Exam not found" });
   res.json(exam);
+});
+
+app.get("/api/exams/:id/export", (req, res) => {
+  const result = exportExam(db, req.params.id);
+  if (!result) return res.status(404).json({ error: "Exam not found" });
+
+  for (const warning of result.warnings) console.warn(`[export] ${warning}`);
+
+  const filename = `${fileSlug(result.document.exam.title)}.exam.json`;
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.json(result.document);
+});
+
+app.post("/api/exams/import", (req, res) => {
+  const body = req.body;
+  // The importing user explicitly chooses visibility; otherwise imports stay
+  // private. A visibility recorded inside the payload is only informational.
+  const requested = body && !Array.isArray(body) ? body.visibility : undefined;
+  const visibility = requested === undefined ? "private" : String(requested);
+  const ownerUserId = req.user ? req.user.id : null;
+
+  const result = importExams(db, body, { ownerUserId, visibility });
+  res.status(201).json(result);
 });
 
 app.post("/api/exams", (req, res) => {

@@ -52,9 +52,13 @@ exam-simulator/
 │   └── bootstrap.js        # storage initialization
 ├── repositories/
 │   ├── exams.js            # exam data access
-│   └── questions.js        # question data access
+│   ├── questions.js        # question data access
+│   ├── question-rules.js   # shared question validation rules
+│   └── exam-json.js        # versioned JSON import/export
 ├── scripts/
 │   └── db-migrate.js       # npm run db:migrate
+├── docs/
+│   └── exam-json-format.md # JSON interchange schema
 ├── uploads/                # question image files (git-ignored)
 ├── public/
 │   ├── index.html
@@ -96,6 +100,24 @@ checksum, original filename and display order.
 
 If images are stored elsewhere (for example a mounted volume), keep the `uploads/` directory
 next to `data/` so backups capture both.
+
+### JSON import and export
+
+JSON remains the portable interchange format for backup, sharing and tooling while SQLite
+stays authoritative.
+
+- `GET /api/exams/:id/export` returns a versioned document (`schemaVersion: 1`) containing the
+  exam, all questions, correct-answer definitions, drag/drop mappings, explanations and image
+  references with metadata. It **never embeds Base64**; images are referenced by their path
+  relative to `uploads/`.
+- `POST /api/exams/import` accepts that document, a single legacy exam object, or an array of
+  them. Everything is validated before anything is written and all writes happen in one
+  transaction, so malformed input cannot leave partial records.
+- Imported exams default to **private**; pass a top-level `"visibility": "public"` to override.
+- A colliding exam id is replaced with a new one while question ids, drag item ids and target
+  mappings are preserved.
+
+The full schema is documented in [`docs/exam-json-format.md`](docs/exam-json-format.md).
 
 The import is idempotent. It is keyed on a hash of the source file and only inserts exam ids
 that do not already exist, so restarting never duplicates records and a newly copied

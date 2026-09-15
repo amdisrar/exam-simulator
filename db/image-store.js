@@ -189,6 +189,44 @@ export function writeImageFile(record, { examId, questionUid }) {
   return { relativePath, absolutePath };
 }
 
+/** Build an image record from an existing buffer (used by JSON import). */
+export function buildImageRecordFromBuffer(buffer, { mimeType = null, originalFilename = null } = {}) {
+  if (!buffer || !buffer.length) {
+    throw new ImageValidationError("Image file is empty.");
+  }
+  if (buffer.length > MAX_IMAGE_BYTES) {
+    throw new ImageValidationError(
+      `Image is too large (${(buffer.length / 1024 / 1024).toFixed(1)} MB). Maximum size is ${MAX_IMAGE_BYTES / 1024 / 1024} MB.`
+    );
+  }
+  // Trust the actual file signature; fall back to the declared type only when
+  // the signature is unrecognised.
+  const declared = normalizeMime(mimeType);
+  const mime = detectImageMime(buffer) || (MIME_EXTENSIONS.has(declared) ? declared : null);
+  if (!mime) {
+    throw new ImageValidationError(`Unsupported image file. Allowed types: ${ALLOWED_LABEL}.`);
+  }
+  return {
+    uid: crypto.randomUUID(),
+    mime,
+    buffer,
+    byteSize: buffer.length,
+    sha256: crypto.createHash("sha256").update(buffer).digest("hex"),
+    extension: MIME_EXTENSIONS.get(mime),
+    originalFilename: sanitizeFilename(originalFilename)
+  };
+}
+
+/** Copy an existing stored image into a question's own directory. */
+export function copyImageIntoStore({ sourcePath, mimeType, originalFilename }, { examId, questionUid }) {
+  // `sourcePath` is always an upload-root-relative path (as written by the
+  // exporter); resolving it here keeps absolute and escaping paths rejected.
+  const buffer = fs.readFileSync(resolveImagePath(sourcePath));
+  const record = buildImageRecordFromBuffer(buffer, { mimeType, originalFilename });
+  const { relativePath, absolutePath } = writeImageFile(record, { examId, questionUid });
+  return { record, relativePath, absolutePath };
+}
+
 export function deleteImageFile(relativePath, { logger = console } = {}) {
   if (!relativePath) return false;
   let absolutePath;

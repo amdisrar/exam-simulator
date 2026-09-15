@@ -59,9 +59,14 @@ export function insertExam(db, { title, description = "" }, options = {}) {
   const timestamp = options.createdAt || nowIso();
 
   db.prepare(`
-    INSERT INTO exams (id, title, description, visibility, sort_order, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, title, description, options.visibility || "public", sortOrder, timestamp, timestamp);
+    INSERT INTO exams (id, title, description, owner_user_id, visibility, sort_order, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, title, description,
+    options.ownerUserId ?? null,
+    options.visibility || "public",
+    sortOrder, timestamp, timestamp
+  );
 
   return id;
 }

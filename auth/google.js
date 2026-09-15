@@ -17,7 +17,10 @@ const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const JWKS_URI = "https://www.googleapis.com/oauth2/v3/certs";
 const ISSUERS = new Set(["https://accounts.google.com", "accounts.google.com"]);
 const JWKS_TTL_MS = 60 * 60 * 1000;
-const CLOCK_SKEW_SECONDS = 60;
+// Clock skew tolerated when validating id_token timestamps. Virtual machines
+// (WSL in particular, after a suspend/resume) can drift by minutes, and a
+// too-tight window rejects otherwise valid tokens.
+const CLOCK_SKEW_SECONDS = 300;
 
 let jwksCache = { keys: null, fetchedAt: 0 };
 
@@ -146,7 +149,9 @@ export async function verifyIdToken(idToken, { clientId, nonce, fetchImpl = fetc
     throw new Error("id_token has expired");
   }
   if (typeof claims.iat === "number" && claims.iat > now + CLOCK_SKEW_SECONDS) {
-    throw new Error("id_token was issued in the future");
+    throw new Error(
+      `id_token was issued in the future (this server's clock is about ${claims.iat - now}s behind; check time synchronisation)`
+    );
   }
   if (!claims.sub) throw new Error("id_token is missing a subject");
   if (nonce && claims.nonce !== nonce) throw new Error("id_token nonce mismatch");

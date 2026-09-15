@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
-    "db:migrate": "node scripts/db-migrate.js"
+    "start": "node --env-file-if-exists=.env server.js",
+    "dev": "node --watch --env-file-if-exists=.env server.js",
+    "db:migrate": "node --env-file-if-exists=.env scripts/db-migrate.js"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

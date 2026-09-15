@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
 import { initializeStorage } from "./db/bootstrap.js";
+import { ROOT_DIR } from "./db/index.js";
 import { describeAuthState, loadAuthConfig } from "./auth/config.js";
 import { createAuthRequest, exchangeCodeForTokens, profileFromClaims, verifyIdToken } from "./auth/google.js";
 import { attachUser, authEnforced, requireAdmin, requireAuth } from "./auth/middleware.js";
@@ -19,6 +20,14 @@ import {
   findQuestionRow,
   updateQuestion
 } from "./repositories/questions.js";
+
+// Load a local .env when present so a plain `node server.js` behaves the same
+// as `npm start`. Variables already present in the environment always win.
+try {
+  process.loadEnvFile(path.join(ROOT_DIR, ".env"));
+} catch {
+  // No .env file: use the process environment as-is.
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

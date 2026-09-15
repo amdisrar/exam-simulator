@@ -122,14 +122,29 @@ The full schema is documented in [`docs/exam-json-format.md`](docs/exam-json-for
 ## Authentication
 
 Sign-in uses Google OpenID Connect, with a local account provisioned on first
-login. Configure it with:
+login. Configuration lives in a `.env` file next to `package.json`:
 
 ```bash
-export GOOGLE_CLIENT_ID="…"
-export GOOGLE_CLIENT_SECRET="…"
-export INITIAL_ADMIN_EMAIL="you@example.com"   # optional bootstrap admin
-export APP_BASE_URL="https://exams.example.com" # optional, used for the redirect
+cp .env.example .env    # then fill in your Google credentials
+npm start
 ```
+
+`.env` is git-ignored; only the empty `.env.example` template is committed.
+Values already present in the real environment take precedence over the file.
+
+| Variable | Purpose |
+|---|---|
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth client credentials (required to enable sign-in) |
+| `INITIAL_ADMIN_EMAIL` | First account with this email becomes admin while no admin exists |
+| `APP_BASE_URL` | Public base URL used for the OAuth redirect |
+| `SESSION_TTL_DAYS` / `SESSION_COOKIE_NAME` | Session tuning (default 30 days / `exam_session`) |
+
+In the Google Cloud console create an OAuth client of type **Web application**
+and add the redirect URI `<APP_BASE_URL>/auth/google/callback`, for example
+`http://localhost:3000/auth/google/callback`. It must match exactly. Google only
+accepts plain HTTP for `localhost`/`127.0.0.1`; anything else needs HTTPS. No
+"authorised JavaScript origin" is required — sign-in is a server-side redirect,
+not a popup.
 
 Without `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` the server runs with
 authentication **disabled** and logs a warning, so local development keeps

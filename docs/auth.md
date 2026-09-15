@@ -6,6 +6,20 @@ tokens are stored.
 
 ## Configuration
 
+Copy the committed template and fill it in:
+
+```bash
+cp .env.example .env
+```
+
+`.env` sits next to `package.json`, is git-ignored, and is loaded by
+`npm start`, `npm run dev` and `npm run db:migrate` (and by a plain
+`node server.js`, which falls back to loading the same file). Variables already
+set in the environment always take precedence, so production can keep using
+systemd `EnvironmentFile=` or container secrets instead.
+
+Never commit real credentials — only `.env.example` is tracked.
+
 | Variable | Required | Purpose |
 |---|---|---|
 | `GOOGLE_CLIENT_ID` | yes | OAuth client id from the Google Cloud console |
@@ -16,8 +30,16 @@ tokens are stored.
 | `SESSION_COOKIE_NAME` | no | Session cookie name (default `exam_session`) |
 | `NODE_ENV` | no | `production` enables `Secure` cookies and refuses to start unauthenticated |
 
-Add `https://<your-host>/auth/google/callback` to the authorised redirect URIs
-of the Google OAuth client.
+In the Google Cloud console, create an OAuth client of type **Web application**
+and add `<APP_BASE_URL>/auth/google/callback` (for example
+`http://localhost:3000/auth/google/callback`) to its authorised redirect URIs.
+The value must match the request exactly, including scheme, host, port and path.
+Google only accepts plain HTTP for `localhost` and `127.0.0.1`; any other host
+must use HTTPS. No authorised JavaScript origin is needed, because the flow is a
+server-side redirect rather than a browser popup.
+
+While the OAuth consent screen is in **Testing** mode, only accounts added as
+test users can sign in.
 
 ### Running without credentials
 

@@ -48,6 +48,14 @@ export function countActiveAdmins(db) {
   return Number(row.count);
 }
 
+export function findFirstActiveAdmin(db) {
+  return db.prepare(`
+    SELECT * FROM users
+    WHERE role = 'admin' AND status = 'active' AND deleted_at IS NULL
+    ORDER BY id ASC LIMIT 1
+  `).get() || null;
+}
+
 export function listUsers(db, { search = "" } = {}) {
   const term = String(search || "").trim();
   if (term) {

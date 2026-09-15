@@ -1,33 +1,26 @@
 import express from "express";
-import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
+import { initializeStorage } from "./db/bootstrap.js";
+import { createExam, examExists, getExamById, listExams } from "./repositories/exams.js";
+import {
+  createQuestion,
+  deleteQuestion,
+  findQuestionRow,
+  updateQuestion
+} from "./repositories/questions.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_FILE = path.join(__dirname, "data", "exams.json");
+
+const { db, path: DB_PATH, importResult } = initializeStorage();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
-
-async function readExams() {
-  try {
-    const raw = await fs.readFile(DATA_FILE, "utf8");
-    const data = JSON.parse(raw);
-    return Array.isArray(data) ? data : [];
-  } catch (err) {
-    if (err.code === "ENOENT") return [];
-    throw err;
-  }
-}
-
-async function writeExams(exams) {
-  await fs.writeFile(DATA_FILE, JSON.stringify(exams, null, 2), "utf8");
-}
 
 function parseQuestionPayload(body) {
   const text = String(body.text || "").trim();
@@ -136,66 +129,46 @@ function validateQuestion(question) {
   return null;
 }
 
-app.get("/api/exams", async (_req, res) => {
-  const exams = await readExams();
-  res.json(exams.map(e => ({
-    id: e.id,
-    title: e.title,
-    description: e.description || "",
-    questionCount: e.questions?.length || 0
-  })));
+app.get("/api/exams", (_req, res) => {
+  res.json(listExams(db));
 });
 
-app.get("/api/exams/:id", async (req, res) => {
-  const exams = await readExams();
-  const exam = exams.find(e => e.id === req.params.id);
+app.get("/api/exams/:id", (req, res) => {
+  const exam = getExamById(db, req.params.id);
   if (!exam) return res.status(404).json({ error: "Exam not found" });
   res.json(exam);
 });
 
-app.post("/api/exams", async (req, res) => {
+app.post("/api/exams", (req, res) => {
   const title = String(req.body.title || "").trim();
   if (!title) return res.status(400).json({ error: "Title is required" });
 
-  const exams = await readExams();
-  const exam = {
-    id: crypto.randomUUID(),
+  const exam = createExam(db, {
     title,
-    description: String(req.body.description || "").trim(),
-    questions: []
-  };
+    description: String(req.body.description || "").trim()
+  });
 
-  exams.push(exam);
-  await writeExams(exams);
   res.status(201).json(exam);
 });
 
-app.post("/api/exams/:id/questions", async (req, res) => {
-  const exams = await readExams();
-  const exam = exams.find(e => e.id === req.params.id);
-  if (!exam) return res.status(404).json({ error: "Exam not found" });
+app.post("/api/exams/:id/questions", (req, res) => {
+  if (!examExists(db, req.params.id)) {
+    return res.status(404).json({ error: "Exam not found" });
+  }
 
   const payload = parseQuestionPayload(req.body);
   const validationError = validateQuestion(payload);
   if (validationError) return res.status(400).json({ error: validationError });
 
-  const question = {
-    id: crypto.randomUUID(),
-    ...payload
-  };
-
-  exam.questions.push(question);
-  await writeExams(exams);
-  res.status(201).json(question);
+  res.status(201).json(createQuestion(db, req.params.id, payload));
 });
 
-app.put("/api/exams/:examId/questions/:questionId", async (req, res) => {
-  const exams = await readExams();
-  const exam = exams.find(e => e.id === req.params.examId);
-  if (!exam) return res.status(404).json({ error: "Exam not found" });
+app.put("/api/exams/:examId/questions/:questionId", (req, res) => {
+  if (!examExists(db, req.params.examId)) {
+    return res.status(404).json({ error: "Exam not found" });
+  }
 
-  const questionIndex = exam.questions.findIndex(q => q.id === req.params.questionId);
-  if (questionIndex === -1) {
+  if (!findQuestionRow(db, req.params.examId, req.params.questionId)) {
     return res.status(404).json({ error: "Question not found" });
   }
 
@@ -203,29 +176,25 @@ app.put("/api/exams/:examId/questions/:questionId", async (req, res) => {
   const validationError = validateQuestion(payload);
   if (validationError) return res.status(400).json({ error: validationError });
 
-  const updatedQuestion = {
-    id: exam.questions[questionIndex].id,
-    ...payload
-  };
+  const updatedQuestion = updateQuestion(db, req.params.examId, req.params.questionId, payload);
+  if (!updatedQuestion) return res.status(404).json({ error: "Question not found" });
 
-  exam.questions[questionIndex] = updatedQuestion;
-  await writeExams(exams);
   res.json(updatedQuestion);
 });
 
-app.delete("/api/exams/:examId/questions/:questionId", async (req, res) => {
-  const exams = await readExams();
-  const exam = exams.find(e => e.id === req.params.examId);
-  if (!exam) return res.status(404).json({ error: "Exam not found" });
+app.delete("/api/exams/:examId/questions/:questionId", (req, res) => {
+  if (!examExists(db, req.params.examId)) {
+    return res.status(404).json({ error: "Exam not found" });
+  }
 
-  const exists = exam.questions.some(q => q.id === req.params.questionId);
-  if (!exists) return res.status(404).json({ error: "Question not found" });
+  if (!deleteQuestion(db, req.params.examId, req.params.questionId)) {
+    return res.status(404).json({ error: "Question not found" });
+  }
 
-  exam.questions = exam.questions.filter(q => q.id !== req.params.questionId);
-  await writeExams(exams);
   res.status(204).end();
 });
 
 app.listen(PORT, () => {
   console.log(`Exam Simulator running at http://localhost:${PORT}`);
+  console.log(`Storage: SQLite (${DB_PATH}) [${importResult.status}${importResult.reason ? `: ${importResult.reason}` : ""}]`);
 });

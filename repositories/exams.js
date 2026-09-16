@@ -149,3 +149,102 @@ export function claimLegacyExams(db, adminUserId, { logger = console } = {}) {
 export function getLegacyClaim(db) {
   return readMeta(db, LEGACY_CLAIM_KEY);
 }
+
+/* ------------------------------------------------------------------- trash */
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+export const DEFAULT_TRASH_RETENTION_DAYS = 30;
+
+/**
+ * Retention window in days, overridable with TRASH_RETENTION_DAYS. Read lazily
+ * so a value loaded from .env after module import is still honoured.
+ */
+export function trashRetentionDays() {
+  const configured = Number(process.env.TRASH_RETENTION_DAYS);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TRASH_RETENTION_DAYS;
+}
+
+/**
+ * Soft-delete an exam: metadata only. The exam row, its questions, its
+ * assignments and its image files are all left untouched.
+ */
+export function deleteExam(db, id, { deletedByUserId = null } = {}) {
+  const now = Date.now();
+  const deletedAt = new Date(now).toISOString();
+  const restoreUntil = new Date(now + trashRetentionDays() * DAY_MS).toISOString();
+
+  const info = db.prepare(`
+    UPDATE exams
+    SET deleted_at = ?, deleted_by_user_id = ?, restore_until = ?, updated_at = ?
+    WHERE id = ? AND deleted_at IS NULL
+  `).run(deletedAt, deletedByUserId, restoreUntil, deletedAt, id);
+
+  if (info.changes === 0) return null;
+  return { id, deletedAt, restoreUntil };
+}
+
+/** Clear the soft-delete metadata, returning the exam to the normal rules. */
+export function restoreExam(db, id) {
+  const info = db.prepare(`
+    UPDATE exams
+    SET deleted_at = NULL, deleted_by_user_id = NULL, restore_until = NULL, updated_at = ?
+    WHERE id = ? AND deleted_at IS NOT NULL
+  `).run(nowIso(), id);
+  return info.changes > 0;
+}
+
+export function findTrashedExam(db, id) {
+  return db.prepare(`
+    SELECT id, title, owner_user_id, deleted_at, deleted_by_user_id, restore_until
+    FROM exams
+    WHERE id = ? AND deleted_at IS NOT NULL
+  `).get(id) || null;
+}
+
+/** True while the exam is still inside its restore window. */
+export function isWithinRestoreWindow(row, now = Date.now()) {
+  const until = row.restore_until ? Date.parse(row.restore_until) : Number.NaN;
+  if (Number.isFinite(until)) return now <= until;
+
+  // Defensive: a deleted row without a deadline falls back to deleted_at + window.
+  const base = row.deleted_at ? Date.parse(row.deleted_at) : Number.NaN;
+  if (Number.isFinite(base)) return now <= base + trashRetentionDays() * DAY_MS;
+  return true;
+}
+
+/**
+ * Deleted exams visible in the caller's Trash: their own, or everything for an
+ * admin. Exams whose restore window has passed are omitted from the UI even
+ * though they remain stored on disk and in the database.
+ */
+export function listTrash(db, user = null) {
+  const unrestricted = !user || user.role === "admin";
+  const rows = db.prepare(`
+    SELECT e.id, e.title, e.description, e.owner_user_id, e.deleted_at,
+           e.deleted_by_user_id, e.restore_until,
+           u.name AS owner_name, u.email AS owner_email
+    FROM exams e
+    LEFT JOIN users u ON u.id = e.owner_user_id
+    WHERE e.deleted_at IS NOT NULL
+      AND (? = 1 OR e.owner_user_id = ?)
+    ORDER BY e.deleted_at DESC
+  `).all(unrestricted ? 1 : 0, user ? user.id : -1);
+
+  const counts = countQuestionsByExam(db);
+  const now = Date.now();
+
+  return rows
+    .filter(row => isWithinRestoreWindow(row, now))
+    .map(row => ({
+      id: row.id,
+      title: row.title,
+      description: row.description || "",
+      questionCount: counts.get(row.id) || 0,
+      ownerUserId: row.owner_user_id,
+      ownerName: row.owner_name || "",
+      ownerEmail: row.owner_email || "",
+      deletedAt: row.deleted_at,
+      restoreUntil: row.restore_until,
+      deletedByUserId: row.deleted_by_user_id
+    }));
+}

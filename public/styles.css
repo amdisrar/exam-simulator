@@ -381,3 +381,8 @@ button.danger:hover {
   font-size: 0.8rem;
   padding: 0.3rem 0.6rem;
 }
+
+/* Trash (Issue #13) */
+#trashRetentionNote {
+  max-width: 60ch;
+}

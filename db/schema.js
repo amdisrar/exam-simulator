@@ -293,5 +293,18 @@ export const MIGRATIONS = [
         CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
       `);
     }
+  },
+  {
+    // Issue #13: name the Trash restore deadline explicitly. Schema v1 added a
+    // speculative `purge_after` column that nothing has ever written to, so it
+    // is renamed rather than duplicated.
+    version: 4,
+    name: "exam-restore-window",
+    up(db) {
+      db.exec(`
+        ALTER TABLE exams RENAME COLUMN purge_after TO restore_until;
+        CREATE INDEX IF NOT EXISTS idx_exams_restore_until ON exams(restore_until);
+      `);
+    }
   }
 ];

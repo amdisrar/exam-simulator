@@ -134,8 +134,57 @@ share with, but it is intentionally narrow:
 Sharing is also possible by exact email address, for deployments that would
 rather not expose a search endpoint at all.
 
+## Trash and soft deletion (#13)
+
+Deleting an exam is a **soft delete**. Nothing is erased:
+
+- the exam row stays, with `deleted_at`, `deleted_by_user_id` and `restore_until` set;
+- its questions, options, drag/drop rows and assignments stay;
+- its image files stay on disk.
+
+Because every read path already filters `deleted_at IS NULL`, a deleted exam
+disappears from lists, cannot be opened, taken or exported, and its images stop
+being served — immediately.
+
+| Endpoint | Who | Behaviour |
+|---|---|---|
+| `DELETE /api/exams/:id` | **owner / admin** | Soft-deletes and returns `deletedAt` + `restoreUntil` |
+| `GET /api/trash` | any signed-in user | The caller's deleted exams; all of them for an admin |
+| `POST /api/exams/:id/restore` | owner (in window) / admin | Clears the soft-delete metadata |
+
+Authorization notes:
+
+- Delete and restore use **owner or admin**, so an assigned recipient receives
+  `403` and **public visibility grants no delete right** at all. An unrelated
+  user gets `404` and never learns the exam exists.
+- Restoring somebody else's deleted exam returns `404`, so the endpoint cannot be
+  used to probe for deleted ids.
+- The Trash listing is scoped in SQL to the caller's own exams (everything for an
+  admin).
+
+### The restore window
+
+`restore_until` is set to `deleted_at + 30 days`. Within the window the exam
+appears in Trash with its title, owner, deletion date and restore deadline.
+
+After the window:
+
+- the exam is **hidden from Trash** for owners *and* admins;
+- it is **not** deleted — the row, questions and files all remain;
+- an owner attempting to restore gets `410 Gone` with a clear explanation;
+- an **admin can still restore it**, which is the recovery path the issue allows
+  ("admin/recovery tooling for expired deleted exams … not required here unless
+  simple to expose").
+
+There is deliberately **no automatic purge**. The GUI never claims that data is
+erased after 30 days, because it is not.
+
+The window is configurable with `TRASH_RETENTION_DAYS` (default 30). The value is
+reported by `GET /api/me` and `GET /api/trash`, so the interface always states the
+real window rather than a hard-coded number.
+
 ## Deliberately out of scope
 
-Exam soft-delete and restore endpoints live in #13 (the schema fields already
-exist). Ownership transfer is a future feature. The assignment model carries
-`expires_at` for time-limited shares, but nothing sets it yet.
+Ownership transfer is a future feature. The assignment model carries `expires_at`
+for time-limited shares, but nothing sets it yet. Automatic purge of expired
+deleted exams is not implemented — by design.

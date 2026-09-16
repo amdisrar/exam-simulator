@@ -170,6 +170,13 @@ private ids are not confirmed, while an exam they may view but not modify return
 See [`docs/authorization.md`](docs/authorization.md) for the rule table, the
 route matrix and the pre-authentication exam handling.
 
+Deleting an exam moves it to **Trash** rather than erasing it. It vanishes from
+every list immediately, but the exam, its questions and its images are kept, and
+the owner (or an admin) can restore it within 30 days. After that it is hidden
+from Trash but is **not** purged — nothing is ever deleted automatically, and an
+admin keeps a recovery path. The window is configurable with
+`TRASH_RETENTION_DAYS`.
+
 Exams can also be **shared** with specific people: an owner (or an admin) grants
 another active user view/take access to a private exam without making it public
 or transferring ownership. Recipients can take the exam but never edit it,

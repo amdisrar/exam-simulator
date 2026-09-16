@@ -11,7 +11,20 @@ import { createSession, deleteSession, parseCookies, serializeCookie } from "./a
 import { countActiveAdmins, findFirstActiveAdmin, listUsers, toPublicUser, updateUserAccess, upsertGoogleUser } from "./auth/users.js";
 import { examAccess, findExamAccessRow, requireExamAccess } from "./auth/authorization.js";
 import { resolveImagePath } from "./db/image-store.js";
-import { claimLegacyExams, createExam, getExamById, listExams, updateExamVisibility, VISIBILITIES } from "./repositories/exams.js";
+import {
+  claimLegacyExams,
+  createExam,
+  deleteExam,
+  findTrashedExam,
+  getExamById,
+  isWithinRestoreWindow,
+  listExams,
+  listTrash,
+  restoreExam,
+  trashRetentionDays,
+  updateExamVisibility,
+  VISIBILITIES
+} from "./repositories/exams.js";
 import { exportExam, importExams } from "./repositories/exam-json.js";
 import { validateQuestion } from "./repositories/question-rules.js";
 import {
@@ -220,7 +233,11 @@ ${detailBlock}
 }
 
 app.get("/api/me", (req, res) => {
-  res.json({ authEnabled: authEnforced(authConfig), user: req.user });
+  res.json({
+    authEnabled: authEnforced(authConfig),
+    user: req.user,
+    trashRetentionDays: trashRetentionDays()
+  });
 });
 
 app.get("/auth/google", (req, res) => {
@@ -344,6 +361,11 @@ app.get("/api/assignable-users", (req, res) => {
     excludeUserId: req.user ? req.user.id : null
   });
   res.json({ users: users.map(assignableUserView) });
+});
+
+// Deleted exams the caller may restore: their own, or all of them for an admin.
+app.get("/api/trash", (req, res) => {
+  res.json({ exams: listTrash(db, req.user), retentionDays: trashRetentionDays() });
 });
 
 // ---------------------------------------------------------------- admin users
@@ -490,6 +512,40 @@ app.delete("/api/exams/:id/assignments/:assignmentId", requireExamAccess(db, aut
     return res.status(404).json({ error: "Assignment not found" });
   }
   res.status(204).end();
+});
+
+// ---------------------------------------------------------------- trash
+
+// Deleting an exam is a soft delete: the exam, its questions, its assignments
+// and its image files all survive. "edit" access means owner or admin only, so
+// an assigned recipient gets 403 and public visibility grants nothing.
+app.delete("/api/exams/:id", requireExamAccess(db, authConfig, "edit", "id"), (req, res) => {
+  const result = deleteExam(db, req.params.id, {
+    deletedByUserId: req.user ? req.user.id : null
+  });
+  if (!result) return res.status(404).json({ error: "Exam not found" });
+  res.json(result);
+});
+
+app.post("/api/exams/:id/restore", (req, res) => {
+  const trashed = findTrashedExam(db, req.params.id);
+  if (!trashed) return res.status(404).json({ error: "Exam not found in Trash" });
+
+  const unrestricted = !req.user || req.user.role === "admin";
+  if (!unrestricted) {
+    // Never confirm the existence of somebody else's deleted exam.
+    if (trashed.owner_user_id !== req.user.id) {
+      return res.status(404).json({ error: "Exam not found in Trash" });
+    }
+    if (!isWithinRestoreWindow(trashed)) {
+      return res.status(410).json({
+        error: `The ${trashRetentionDays()}-day restore window for this exam has passed. An administrator can still recover it.`
+      });
+    }
+  }
+
+  restoreExam(db, req.params.id);
+  res.json({ id: req.params.id, restored: true });
 });
 
 app.post("/api/exams/:id/questions", requireExamAccess(db, authConfig, "edit", "id"), (req, res) => {

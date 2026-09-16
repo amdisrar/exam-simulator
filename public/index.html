@@ -15,10 +15,35 @@
       </div>
       <div class="topbar-actions">
         <button id="homeBtn" class="secondary hidden">All Exams</button>
+        <button id="trashBtn" class="secondary">Trash</button>
         <button id="adminBtn" class="secondary hidden">Admin</button>
         <div id="userBox" class="user-box hidden"></div>
       </div>
     </header>
+
+    <section id="trashView" class="hidden">
+      <div class="section-head">
+        <div>
+          <h2>Trash</h2>
+          <p id="trashRetentionNote" class="muted"></p>
+        </div>
+      </div>
+      <p id="trashMessage" class="form-message"></p>
+      <div class="card">
+        <table class="user-table">
+          <thead>
+            <tr>
+              <th>Exam</th>
+              <th>Owner</th>
+              <th>Deleted</th>
+              <th>Restorable until</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="trashRows"></tbody>
+        </table>
+      </div>
+    </section>
 
     <section id="adminView" class="hidden">
       <div class="section-head">
@@ -185,6 +210,7 @@
         <div class="actions">
           <button id="startExamBtn">Start Practice</button>
           <button id="editExamBtn" class="secondary">Edit Questions</button>
+          <button id="deleteExamBtn" class="danger hidden">Delete Exam</button>
         </div>
       </div>
     </section>

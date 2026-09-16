@@ -14,11 +14,12 @@ const state = {
   sessionConfig: {},
   examEndsAt: null,
   timerHandle: null,
-  currentUser: null
+  currentUser: null,
+  trashRetentionDays: 30
 };
 
 const $ = id => document.getElementById(id);
-const views = ["examListView", "configureView", "examView", "editView", "adminView"];
+const views = ["examListView", "configureView", "examView", "editView", "adminView", "trashView"];
 
 function makeId(prefix = "id") {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
@@ -35,6 +36,7 @@ function showAuthGate() {
   $("authGate").classList.remove("hidden");
   $("homeBtn").classList.add("hidden");
   $("userBox").classList.add("hidden");
+  $("trashBtn").classList.add("hidden");
 }
 
 async function api(url, options = {}) {
@@ -173,6 +175,7 @@ function renderExamAccess() {
   $("examVisibilityControl").classList.toggle("hidden", !exam.canEdit);
   $("examVisibilitySelect").value = exam.visibility;
   $("editExamBtn").classList.toggle("hidden", !exam.canEdit);
+  $("deleteExamBtn").classList.toggle("hidden", !exam.canEdit);
   $("examSettingsMessage").textContent = "";
 
   // Sharing is equally restricted to the owner (or an admin).
@@ -184,6 +187,127 @@ function renderExamAccess() {
     loadAssignments(exam.id).catch(err => { $("shareMessage").textContent = err.message; });
   }
 }
+
+/* ------------------------------------------------------------------- trash */
+
+async function loadTrash() {
+  const data = await api("/api/trash");
+  if (Number.isFinite(data.retentionDays)) state.trashRetentionDays = data.retentionDays;
+
+  $("trashRetentionNote").innerHTML =
+    `Deleted exams can be restored for ${state.trashRetentionDays} days. After that they no longer ` +
+    `appear in this list, but they are <strong>not erased</strong> from the server.`;
+
+  renderTrash(data.exams);
+}
+
+function renderTrash(exams) {
+  const host = $("trashRows");
+  host.innerHTML = "";
+
+  if (!exams.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 5;
+    cell.textContent = "Trash is empty.";
+    row.appendChild(cell);
+    host.appendChild(row);
+    return;
+  }
+
+  for (const exam of exams) {
+    const row = document.createElement("tr");
+
+    const titleCell = document.createElement("td");
+    const title = document.createElement("strong");
+    title.textContent = exam.title;
+    titleCell.appendChild(title);
+    const count = document.createElement("div");
+    count.className = "muted small";
+    count.textContent = `${exam.questionCount} question${exam.questionCount === 1 ? "" : "s"}`;
+    titleCell.appendChild(count);
+    row.appendChild(titleCell);
+
+    const ownerCell = document.createElement("td");
+    ownerCell.className = "muted small";
+    ownerCell.textContent = exam.ownerName || exam.ownerEmail || "—";
+    row.appendChild(ownerCell);
+
+    const deletedCell = document.createElement("td");
+    deletedCell.className = "muted small";
+    deletedCell.textContent = formatTimestamp(exam.deletedAt);
+    row.appendChild(deletedCell);
+
+    const untilCell = document.createElement("td");
+    untilCell.className = "muted small";
+    untilCell.textContent = formatTimestamp(exam.restoreUntil);
+    row.appendChild(untilCell);
+
+    const actions = document.createElement("td");
+    actions.className = "user-actions";
+    const restore = document.createElement("button");
+    restore.type = "button";
+    restore.className = "secondary";
+    restore.textContent = "Restore";
+    restore.addEventListener("click", () => restoreTrashedExam(exam));
+    actions.appendChild(restore);
+    row.appendChild(actions);
+
+    host.appendChild(row);
+  }
+}
+
+async function restoreTrashedExam(exam) {
+  if (!window.confirm(`Restore "${exam.title}"? It returns to the exam list with its original visibility.`)) return;
+
+  const message = $("trashMessage");
+  try {
+    await api(`/api/exams/${exam.id}/restore`, { method: "POST" });
+    await loadTrash();
+    await loadExamList();
+    message.textContent = `"${exam.title}" was restored.`;
+    message.className = "form-message success";
+  } catch (err) {
+    message.textContent = err.message;
+    message.className = "form-message form-error";
+  }
+}
+
+async function openTrashView() {
+  $("trashMessage").textContent = "";
+  $("trashMessage").className = "form-message";
+  showView("trashView");
+  try {
+    await loadTrash();
+  } catch (err) {
+    $("trashMessage").textContent = err.message;
+    $("trashMessage").className = "form-message form-error";
+  }
+}
+
+$("trashBtn").addEventListener("click", openTrashView);
+
+$("deleteExamBtn").addEventListener("click", async () => {
+  const exam = state.selectedExam;
+  if (!exam || !exam.canEdit) return;
+
+  const days = state.trashRetentionDays;
+  if (!window.confirm(
+    `Move "${exam.title}" to Trash?\n\n` +
+    `It can be restored from the Trash for ${days} days.\n` +
+    `Questions and images are kept.`
+  )) return;
+
+  try {
+    await api(`/api/exams/${exam.id}`, { method: "DELETE" });
+    state.selectedExam = null;
+    await loadExamList();
+    showView("examListView");
+  } catch (err) {
+    $("examSettingsMessage").textContent = err.message;
+    $("examSettingsMessage").className = "form-message form-error";
+  }
+});
 
 /* ------------------------------------------------------- sharing an exam */
 
@@ -1387,6 +1511,8 @@ async function bootstrap() {
     // A 401 already surfaced the sign-in gate.
     return;
   }
+
+  if (Number.isFinite(session?.trashRetentionDays)) state.trashRetentionDays = session.trashRetentionDays;
 
   if (session && session.user) {
     state.currentUser = session.user;
